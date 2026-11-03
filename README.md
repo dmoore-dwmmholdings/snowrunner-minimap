@@ -2,7 +2,7 @@
 
 An early Windows minimap mod project, developed on macOS for later Windows testing.
 
-**Current state:** original Windows launcher and bounded read-only pose probe, plus the isolated diagnostic DLL/host. Debug and Release pass 5/5 CTest cases; all 32 Python tests pass. A real parked Scout produces consistent pose candidates and a matching map ID, but heading/movement are unverified. The native load attempt stopped at a loader compatibility guard before modifying the process. There is no working in-game minimap yet. See the [live validation checkpoint](docs/live-validation.md).
+**Current state:** original Windows launcher and bounded read-only pose probe, plus the isolated diagnostic DLL/host and [offscreen Direct3D renderer](docs/mock-renderer.md). Debug and Release pass 6/6 CTest cases, including 22 rendered-pixel/transition checks; the earlier 32 Python tests pass. A real parked Scout produces consistent pose candidates and a matching map ID, but heading/movement are unverified. The native load attempt stopped at a loader compatibility guard before modifying the process. There is no working in-game minimap yet. See the [live validation checkpoint](docs/live-validation.md).
 
 [Live Andare board](https://andare.bottega-suite.com/w/RLdpCCh1YgoQVD5lYRoU/p/SNOW/board) · [Feasibility](docs/feasibility.md) · [Native research and boundaries](docs/native-integration.md) · [Windows handoff](docs/windows-testing.md)
 
