@@ -98,7 +98,8 @@ def identifier_candidates(chunk, bundle_offset):
     return hits
 
 
-def inspect_archive(path, member, selected):
+def read_archive_bundle(path, member):
+    """Read one bounded, unencrypted ZIP member without extracting it."""
     with zipfile.ZipFile(path) as archive:
         entries = [i for i in archive.infolist() if i.filename == member]
         if len(entries) != 1:
@@ -110,6 +111,11 @@ def inspect_archive(path, member, selected):
             blob = stream.read(MAX_BUNDLE_BYTES + 1)
         if len(blob) != entry.file_size:
             raise ValueError('Bundle size changed or exceeded its limit.')
+    return blob
+
+
+def inspect_archive(path, member, selected):
+    blob = read_archive_bundle(path, member)
     modules = parse_bundle(blob)
     by_name = {m['name']: m for m in modules}
     missing = sorted(set(selected) - by_name.keys())
