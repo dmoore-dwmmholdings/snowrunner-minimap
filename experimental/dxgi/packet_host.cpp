@@ -32,6 +32,11 @@ int main(int argc,char** argv){
     SrmmCalibration calibration;calibration.affine={.001,0,.25,0,-.001,.75};
     SrmmCandidateGate locked(42,99,{},"level_test_01",calibration);
     check(locked.consume(p.data(),256,1000).status==SrmmPacketStatus::unvalidated,"Unmeasured calibration hides candidates");
+    SrmmCandidateGate preview(42,99,{},"level_test_01",calibration,true);
+    auto preview_result=preview.consume(p.data(),256,1000);
+    check(preview_result.status==SrmmPacketStatus::ready_alignment_preview&&preview_result.frame&&preview_result.frame->alignment_preview,"Opt-in preview is visibly and semantically provisional");
+    check(!preview.consume(p.data(),256,1751).frame,"Preview still rejects stale telemetry");
+    auto preview_bad=p;put64(preview_bad.data()+40,100);check(!preview.consume(preview_bad.data(),256,1752).frame,"Preview still rejects another session");
     calibration.validated=true;calibration.texture_v_flipped=true;
     SrmmCandidateGate gate(42,99,{},"level_test_01",calibration);
     auto result=gate.consume(p.data(),256,1000);check(result.frame&&std::abs(result.frame->center_u-.35f)<1e-6&&std::abs(result.frame->center_v-.55f)<1e-6,"Affine world projection");

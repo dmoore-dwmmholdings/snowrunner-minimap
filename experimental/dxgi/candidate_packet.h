@@ -23,7 +23,7 @@ struct SrmmCalibration {
     bool texture_v_flipped=false;
     bool validated=false;
 };
-enum class SrmmPacketStatus { ready_diagnostic,unvalidated,invalid,wrong_context,unavailable,stale,out_of_order,clock_error };
+enum class SrmmPacketStatus { ready_diagnostic,ready_alignment_preview,unvalidated,invalid,wrong_context,unavailable,stale,out_of_order,clock_error };
 struct SrmmCandidateFrame { SrmmPacketStatus status=SrmmPacketStatus::invalid;std::optional<SrmmMapFrame> frame; };
 class SrmmCandidateGate {
     std::uint32_t pid_;
@@ -32,9 +32,10 @@ class SrmmCandidateGate {
     std::string map_;
     SrmmCalibration calibration_;
     std::array<std::uint8_t,256> accepted_{};
+    bool alignment_preview_=false;
     bool have_sequence_=false,have_tick_=false,poisoned_=false;
 public:
-    SrmmCandidateGate(std::uint32_t pid,std::uint64_t session,std::array<std::uint8_t,32> build,std::string map,SrmmCalibration calibration);
+    SrmmCandidateGate(std::uint32_t pid,std::uint64_t session,std::array<std::uint8_t,32> build,std::string map,SrmmCalibration calibration,bool alignment_preview=false);
     // Diagnostic replay only: even validated geometry is not promoted into the production native source.
     SrmmCandidateFrame consume(const void*,std::size_t,std::uint64_t now_ms) noexcept;
 };

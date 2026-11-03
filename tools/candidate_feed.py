@@ -82,10 +82,12 @@ def main():
     parser.add_argument('--map', required=True)
     parser.add_argument('--output-dir', type=Path, required=True)
     parser.add_argument('--seconds', type=int, default=30)
+    parser.add_argument('--session', type=int, help='Explicit nonzero diagnostic session identity prepared before game startup.')
     args = parser.parse_args()
     if not 1 <= args.seconds <= 600 or not re.fullmatch(r'level_[a-z0-9_]{3,48}', args.map):
         parser.error('Duration must be 1..600 seconds and map must be a canonical level identifier.')
-    reader = None;directory = None;sequence = 0;session = secrets.randbits(64) or 1
+    if args.session is not None and not 0 < args.session < 2**64:parser.error('Session must be a nonzero uint64.')
+    reader = None;directory = None;sequence = 0;session = args.session or secrets.randbits(64) or 1
     try:
         if args.layout.stat().st_size > 1024*1024:
             raise ValueError('Discovery report exceeds size limit.')

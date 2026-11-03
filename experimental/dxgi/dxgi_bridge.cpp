@@ -13,6 +13,10 @@
 #include "shared_renderer.h"
 #include <array>
 #include "bootstrap_probe.h"
+#ifdef SRMM_GAME_SESSION
+#include "game_session.h"
+#include <memory>
+#endif
 using Microsoft::WRL::ComPtr;
 namespace {
 std::atomic<unsigned long long> factories{}, swaps{}, presents{}, resizes{}, live_factories{}, live_swaps{}, unknown_queries{};
@@ -65,6 +69,14 @@ class Swap final : public IDXGISwapChain4 {
     ComPtr<IDXGISwapChain4> real_;
     ComPtr<IUnknown> parent_;
     SharedRenderer renderer_;
+#ifdef SRMM_GAME_SESSION
+    std::unique_ptr<SrmmGameLayer> game_;
+    std::atomic_flag drawing_=ATOMIC_FLAG_INIT;
+    void draw_game(UINT flags) noexcept {
+        if(!game_||drawing_.test_and_set())return;
+        game_->draw(real_.Get(),flags);drawing_.clear();
+    }
+#endif
     bool initialized_=false,failed_=false;
     void draw_owned_fixture(UINT flags) noexcept {
         // This shader path is only reachable in the explicitly named owned host.
@@ -80,7 +92,11 @@ class Swap final : public IDXGISwapChain4 {
         else { failed_=true;++render_failures;renderer_.reset(); }
     }
 public:
-    Swap(IDXGISwapChain4* value,IUnknown* parent) : real_(value),parent_(parent) { ++swaps; ++live_swaps; srmm_probe_log("swap-created",swaps.load()); }
+    Swap(IDXGISwapChain4* value,IUnknown* parent) : real_(value),parent_(parent) { ++swaps; ++live_swaps; srmm_probe_log("swap-created",swaps.load());
+#ifdef SRMM_GAME_SESSION
+        if(srmm_verified_game())try{game_=std::make_unique<SrmmGameLayer>();}catch(...){srmm_probe_log("session-create-failed");}
+#endif
+    }
     ~Swap() { --live_swaps; srmm_probe_log("swap-released",live_swaps.load()); }
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID id,void** out) override {
         if (!out) return E_POINTER;
@@ -95,10 +111,18 @@ public:
         ++presents;
         if(presents.load()==1||presents.load()%300==0)srmm_probe_log("present",presents.load(),flags);
         draw_owned_fixture(flags);
+#ifdef SRMM_GAME_SESSION
+        draw_game(flags);
+#endif
+
         return real_->Present(sync,flags); // Normal virtual call, preserving the underlying implementation.
     }
     HRESULT STDMETHODCALLTYPE Present1(UINT sync,UINT flags,const DXGI_PRESENT_PARAMETERS* parameters) override {
-        ++presents;if(presents.load()==1||presents.load()%300==0)srmm_probe_log("present1",presents.load(),flags);draw_owned_fixture(flags); return real_->Present1(sync,flags,parameters);
+        ++presents;if(presents.load()==1||presents.load()%300==0)srmm_probe_log("present1",presents.load(),flags);draw_owned_fixture(flags);
+#ifdef SRMM_GAME_SESSION
+        draw_game(flags);
+#endif
+ return real_->Present1(sync,flags,parameters);
     }
     HRESULT STDMETHODCALLTYPE ResizeBuffers(UINT count,UINT width,UINT height,DXGI_FORMAT format,UINT flags) override {
         ++resizes;srmm_probe_log("resize",width,height);return real_->ResizeBuffers(count,width,height,format,flags);

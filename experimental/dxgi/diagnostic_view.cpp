@@ -2,8 +2,8 @@
 #include <utility>
 using Microsoft::WRL::ComPtr;
 SrmmDiagnosticView::SrmmDiagnosticView(std::uint64_t generation,std::array<std::uint8_t,32> asset_hash,
-    std::uint32_t pid,std::uint64_t session,std::array<std::uint8_t,32> build,std::string map,SrmmCalibration calibration)
- :generation_(generation),asset_hash_(asset_hash),gate_(pid,session,build,std::move(map),calibration){}
+    std::uint32_t pid,std::uint64_t session,std::array<std::uint8_t,32> build,std::string map,SrmmCalibration calibration,bool alignment_preview,float left,float top,float size)
+ :generation_(generation),asset_hash_(asset_hash),gate_(pid,session,build,std::move(map),calibration,alignment_preview),left_(left),top_(top),size_(size){}
 void SrmmDiagnosticView::clear() noexcept {renderer_.reset();asset_.reset();device_.Reset();}
 SrmmViewResult SrmmDiagnosticView::draw(IDXGISwapChain* swap,const std::shared_ptr<const SrmmIngestSnapshot>& snapshot,std::uint64_t now,bool hud_allowed) noexcept {
     if(std::this_thread::get_id()!=owner_)return {SrmmViewStatus::wrong_thread};
@@ -18,7 +18,7 @@ SrmmViewResult SrmmDiagnosticView::draw(IDXGISwapChain* swap,const std::shared_p
         clear();hr=renderer_.initialize_dds(device.Get(),snapshot->asset->dds.data(),snapshot->asset->dds.size());
         if(SUCCEEDED(hr)){asset_=snapshot->asset;device_=device;}
     }
-    if(SUCCEEDED(hr))hr=renderer_.draw(swap,*frame.frame);
+    if(SUCCEEDED(hr)){auto placement=*frame.frame;placement.left=left_;placement.top=top_;placement.size=size_;hr=renderer_.draw(swap,placement);}
     if(FAILED(hr)){clear();return {SrmmViewStatus::graphics_error,frame.status,hr};}
     return {SrmmViewStatus::ready_diagnostic,frame.status,S_OK};
 }

@@ -27,8 +27,8 @@ std::optional<SrmmCandidatePacket> srmm_parse_candidate(const void* data,std::si
     return result;
  }catch(...){return {};}
 }
-SrmmCandidateGate::SrmmCandidateGate(std::uint32_t pid,std::uint64_t session,std::array<std::uint8_t,32> build,std::string map,SrmmCalibration calibration)
- :pid_(pid),session_(session),build_(build),map_(std::move(map)),calibration_(calibration){}
+SrmmCandidateGate::SrmmCandidateGate(std::uint32_t pid,std::uint64_t session,std::array<std::uint8_t,32> build,std::string map,SrmmCalibration calibration,bool alignment_preview)
+ :pid_(pid),session_(session),build_(build),map_(std::move(map)),calibration_(calibration),alignment_preview_(alignment_preview){}
 SrmmCandidateFrame SrmmCandidateGate::consume(const void* data,std::size_t size,std::uint64_t now) noexcept {
     auto hide=[](SrmmPacketStatus status){return SrmmCandidateFrame{status,{}};};
     if(poisoned_||(have_tick_&&now<last_tick_)){poisoned_=true;return hide(SrmmPacketStatus::clock_error);}
@@ -40,7 +40,7 @@ SrmmCandidateFrame SrmmCandidateGate::consume(const void* data,std::size_t size,
     if(have_sequence_&&(p.sequence<last_sequence_||p.sampled_ms<last_sampled_||(p.sequence==last_sequence_&&std::memcmp(data,accepted_.data(),256))))return hide(SrmmPacketStatus::out_of_order);
     last_sequence_=p.sequence;last_sampled_=p.sampled_ms;have_sequence_=true;std::memcpy(accepted_.data(),data,256);
     if(!p.available)return hide(SrmmPacketStatus::unavailable);
-    if(!calibration_.validated)return hide(SrmmPacketStatus::unvalidated);
+    if(!calibration_.validated&&!alignment_preview_)return hide(SrmmPacketStatus::unvalidated);
     const auto& a=calibration_.affine;
     for(auto v:a)if(!std::isfinite(v))return hide(SrmmPacketStatus::invalid);
     const auto determinant=a[0]*a[4]-a[1]*a[3];
@@ -50,5 +50,6 @@ SrmmCandidateFrame SrmmCandidateGate::consume(const void* data,std::size_t size,
     if(!std::isfinite(du)||!std::isfinite(dv)||!std::isfinite(u)||!std::isfinite(v)||u<0||u>1||v<0||v>1||std::hypot(du,dv)<1e-12)return hide(SrmmPacketStatus::invalid);
     SrmmMapFrame frame;frame.center_u=static_cast<float>(u);frame.center_v=static_cast<float>(v);frame.heading=static_cast<float>(std::atan2(du,-dv));
     frame.uv_per_pixel=calibration_.uv_per_pixel;frame.texture_v_flipped=calibration_.texture_v_flipped;
-    return {SrmmPacketStatus::ready_diagnostic,frame};
+    frame.alignment_preview=!calibration_.validated;
+    return {calibration_.validated?SrmmPacketStatus::ready_diagnostic:SrmmPacketStatus::ready_alignment_preview,frame};
 }

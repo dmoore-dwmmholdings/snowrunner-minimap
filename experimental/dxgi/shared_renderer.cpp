@@ -18,7 +18,7 @@ float4 pixel(float4 p:SV_POSITION):SV_TARGET {
  float2 uv=mapView.xy+d*mapView.z;
  if(mapView.w<0) uv.y=1-uv.y;
  float3 color=mapImage.Sample(mapSampler,uv).rgb;
- if(r>viewport.z*.5-2) color=float3(.75,.83,.85);
+ if(r>viewport.z*.5-2) color=marker.z>0?float3(1,.1,.8):float3(.75,.83,.85);
  float2 m=float2(marker.x*d.x+marker.y*d.y,-marker.y*d.x+marker.x*d.y);
  if(m.y>=-12 && m.y<=8 && abs(m.x)<.4*(m.y+12)) color=1;
  return float4(color,1);
@@ -74,7 +74,7 @@ HRESULT SharedRenderer::draw(IDXGISwapChain* swap,const SrmmMapFrame& f) noexcep
  D3D11_TEXTURE2D_DESC desc{};buffer->GetDesc(&desc);
  if(f.left+f.size>desc.Width||f.top+f.size>desc.Height||desc.SampleDesc.Count!=1)return E_INVALIDARG;
  ComPtr<ID3D11RenderTargetView> target;hr=device_->CreateRenderTargetView(buffer.Get(),nullptr,&target);if(FAILED(hr))return hr;
- const Constants values{{f.left,f.top,f.size,0},{f.center_u,f.center_v,f.uv_per_pixel,f.texture_v_flipped?-1.f:1.f},{std::cos(f.heading),std::sin(f.heading),0,0}};
+ const Constants values{{f.left,f.top,f.size,0},{f.center_u,f.center_v,f.uv_per_pixel,f.texture_v_flipped?-1.f:1.f},{std::cos(f.heading),std::sin(f.heading),f.alignment_preview?1.f:0.f,0}};
  D3D11_MAPPED_SUBRESOURCE mapped{};hr=deferred_->Map(constants_.Get(),0,D3D11_MAP_WRITE_DISCARD,0,&mapped);if(FAILED(hr))return hr;
  std::memcpy(mapped.pData,&values,sizeof(values));deferred_->Unmap(constants_.Get(),0);
  auto* rtv=target.Get();deferred_->OMSetRenderTargets(1,&rtv,nullptr);
