@@ -1,5 +1,7 @@
 # Proposed compatibility design and decision
 
+**Follow-up implementation:** the [DXGI startup bridge experiment](../experimental/dxgi/README.md) supplies an original COM-owned entry path and concrete shared-backbuffer renderer for evaluation. It has passed owned-host tests, but has not been deployed or validated in SnowRunner. The unavailable game-host interface described below remains unavailable; the new route tests a different ownership mechanism without changing the guarded remote launcher. Read this document as the earlier design analysis, not the latest implementation inventory.
+
 2026-11-03. **Design proposal, not an implemented or game-validated adapter.** The existing launcher guard remains unchanged. This document separates a workable ownership model from the missing means of entering SnowRunner safely.
 
 ## Decision

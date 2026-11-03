@@ -1,0 +1,5 @@
+LIBRARY dxgi
+EXPORTS
+    CreateDXGIFactory=BridgeCreateDXGIFactory @10
+    CreateDXGIFactory1=BridgeCreateDXGIFactory1 @11
+    CreateDXGIFactory2=BridgeCreateDXGIFactory2 @12
