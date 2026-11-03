@@ -1,5 +1,7 @@
 # Native in-game research and adapter boundary
 
+Historical research checkpoint below. For current status, see the [loading decision](loading-decision.md) and [community source review](community-loader-review.md); later milestones supersede the implementation inventory and authorization statements in this checkpoint.
+
 Updated 2026-11-03. The target remains an in-game Windows minimap. The Windows checkpoint now includes a successful MSVC build, read-only executable inspection, normal game launch, display-setting observation and process module enumeration. No game memory has been scanned, debugger attached or native mod loaded. See [Windows evidence and the REA analysis timeout](windows-inspection.md).
 
 ## Precedent and version limits

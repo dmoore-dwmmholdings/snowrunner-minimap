@@ -78,6 +78,44 @@ int main() {
         bool rejected = false;
         try { MockD3d11Renderer invalid(4096); } catch (const std::invalid_argument&) { rejected = true; }
         check(rejected, "Oversized allocation rejected");
+        const auto old_packet = frame({0,0},0);
+        for (unsigned dimension : {128u, 320u, 64u, 256u}) {
+            renderer.resize(dimension);
+            context.viewport_size = dimension;
+            const auto resized = renderer.render(frame({0,0},0));
+            check(resized.size == dimension && resized.pixels.size() == static_cast<size_t>(dimension)*dimension*4,
+                  "Resize changes texture and readback dimensions together");
+            check(rgb(resized,dimension/2,dimension/2,white), "Resize recenters marker");
+            check(resized.pixels[3] == 0, "Resize preserves circular clipping");
+            if (dimension >= 128)
+                check(rgb(resized,dimension/2+50,dimension/2,cyan), "Resize preserves calibrated landmark distance");
+            if (dimension != 256)
+                check(empty(renderer.render(old_packet)), "Old viewport packet cannot draw after resize");
+        }
+        for (unsigned dimension : {1u, 63u, 2049u, std::numeric_limits<unsigned>::max()}) {
+            rejected = false;
+            try { renderer.resize(dimension); } catch (const std::invalid_argument&) { rejected = true; }
+            check(rejected, "Invalid resize rejected before allocation");
+            check(renderer.render(old_packet).pixels == north.pixels, "Rejected resize preserves previous renderer");
+        }
+        renderer.resize(0);
+        auto suspended = renderer.render(old_packet);
+        check(suspended.size == 0 && suspended.pixels.empty(), "Zero size suspends with no stale image");
+        renderer.suspend();
+        check(renderer.render(old_packet).pixels.empty(), "Repeated suspension is harmless");
+        rejected = false;
+        try { renderer.resize(63); } catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected && renderer.render(old_packet).size == 0, "Invalid resume remains suspended");
+        renderer.resize(256);
+        check(empty(renderer.render(frame({0,0},0,ReadState::menu))), "Recreated device starts with hidden menu frame");
+        check(renderer.render(frame({0,0},0)).pixels == north.pixels, "Fresh device reproduces original pixels");
+        renderer.resize(256);
+        check(renderer.render(frame({0,0},0)).pixels == north.pixels, "Same-size resize preserves rendering");
+        renderer.suspend();
+        renderer.resize(128);
+        check(empty(renderer.render(old_packet)), "Device recreation rejects old viewport geometry");
+        context.viewport_size = 128;
+        check(rgb(renderer.render(frame({0,0},0)),64,64,white), "Recreated device accepts new viewport frame");
         std::cout << "PASS: " << checks << " offscreen WARP pixel/transition checks; synthetic only, no game device/window/access.\n";
         return 0;
     } catch (const std::exception& error) {

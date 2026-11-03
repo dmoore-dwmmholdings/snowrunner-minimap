@@ -55,6 +55,9 @@ ComPtr<ID3DBlob> compile(const char* entry, const char* profile) {
 struct Constants { std::array<float, 4> map, screen, marker; };
 static_assert(sizeof(Constants) == 48);
 bool bounded(double value, double maximum) { return std::isfinite(value) && std::abs(value) <= maximum; }
+void validate_size(unsigned size) {
+    if (size < 64 || size > 2048) throw std::invalid_argument("Mock viewport must be 64..2048 pixels.");
+}
 }
 struct MockD3d11Renderer::Impl {
     unsigned size;
@@ -67,24 +70,12 @@ struct MockD3d11Renderer::Impl {
     ComPtr<ID3D11Buffer> constants;
     ComPtr<ID3D11RasterizerState> raster;
     explicit Impl(unsigned dimension) : size(dimension) {
-        if (size < 64 || size > 2048) throw std::invalid_argument("Mock viewport must be 64..2048 pixels.");
+        validate_size(size);
         const D3D_FEATURE_LEVEL requested[] = {D3D_FEATURE_LEVEL_11_0};
         D3D_FEATURE_LEVEL actual{};
         checked(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0, requested, 1, D3D11_SDK_VERSION,
                                   &device, &actual, &context), "Create owned WARP device");
-        D3D11_TEXTURE2D_DESC texture{};
-        texture.Width = texture.Height = size;
-        texture.MipLevels = texture.ArraySize = 1;
-        texture.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-        texture.SampleDesc.Count = 1;
-        texture.Usage = D3D11_USAGE_DEFAULT;
-        texture.BindFlags = D3D11_BIND_RENDER_TARGET;
-        checked(device->CreateTexture2D(&texture, nullptr, &target), "Create offscreen texture");
-        checked(device->CreateRenderTargetView(target.Get(), nullptr, &rtv), "Create owned render target");
-        texture.Usage = D3D11_USAGE_STAGING;
-        texture.BindFlags = 0;
-        texture.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-        checked(device->CreateTexture2D(&texture, nullptr, &staging), "Create readback texture");
+        resize(size);
         auto vertex = compile("vertex", "vs_5_0"), pixel = compile("pixel", "ps_5_0");
         checked(device->CreateVertexShader(vertex->GetBufferPointer(), vertex->GetBufferSize(), nullptr, &vs), "Create vertex shader");
         checked(device->CreatePixelShader(pixel->GetBufferPointer(), pixel->GetBufferSize(), nullptr, &ps), "Create pixel shader");
@@ -98,6 +89,34 @@ struct MockD3d11Renderer::Impl {
         raster_desc.CullMode = D3D11_CULL_NONE;
         raster_desc.DepthClipEnable = TRUE;
         checked(device->CreateRasterizerState(&raster_desc, &raster), "Create raster state");
+    }
+    ~Impl() {
+        // This is our private context. Never clear an application's shared state.
+        if (context) context->ClearState();
+    }
+    void resize(unsigned dimension) {
+        validate_size(dimension);
+        ComPtr<ID3D11Texture2D> next_target, next_staging;
+        ComPtr<ID3D11RenderTargetView> next_rtv;
+        D3D11_TEXTURE2D_DESC texture{};
+        texture.Width = texture.Height = dimension;
+        texture.MipLevels = texture.ArraySize = 1;
+        texture.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        texture.SampleDesc.Count = 1;
+        texture.Usage = D3D11_USAGE_DEFAULT;
+        texture.BindFlags = D3D11_BIND_RENDER_TARGET;
+        checked(device->CreateTexture2D(&texture, nullptr, &next_target), "Create offscreen texture");
+        checked(device->CreateRenderTargetView(next_target.Get(), nullptr, &next_rtv), "Create owned render target");
+        texture.Usage = D3D11_USAGE_STAGING;
+        texture.BindFlags = 0;
+        texture.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        checked(device->CreateTexture2D(&texture, nullptr, &next_staging), "Create readback texture");
+        // Commit only a complete resource set; release the context's old RTV reference.
+        context->OMSetRenderTargets(0, nullptr, nullptr);
+        target.Swap(next_target);
+        staging.Swap(next_staging);
+        rtv.Swap(next_rtv);
+        size = dimension;
     }
     RgbaImage readback() {
         RgbaImage result{size, std::vector<std::uint8_t>(static_cast<size_t>(size)*size*4)};
@@ -113,7 +132,15 @@ struct MockD3d11Renderer::Impl {
 };
 MockD3d11Renderer::MockD3d11Renderer(unsigned size) : impl_(std::make_unique<Impl>(size)) {}
 MockD3d11Renderer::~MockD3d11Renderer() = default;
+void MockD3d11Renderer::suspend() noexcept { impl_.reset(); }
+void MockD3d11Renderer::resize(unsigned size) {
+    if (size == 0) { suspend(); return; }
+    validate_size(size);
+    if (!impl_) impl_ = std::make_unique<Impl>(size);
+    else if (impl_->size != size) impl_->resize(size);
+}
 RgbaImage MockD3d11Renderer::render(const RenderPacket& packet) {
+    if (!impl_) return {0, {}}; // No device or stale image while suspended.
     auto& p = *impl_;
     const float clear[4]{};
     p.context->ClearRenderTargetView(p.rtv.Get(), clear); // Every frame starts empty, including invalid transitions.
