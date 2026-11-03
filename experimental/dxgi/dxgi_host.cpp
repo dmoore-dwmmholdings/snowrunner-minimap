@@ -75,6 +75,23 @@ int main(int argc,char**) {
         desc.SwapEffect=DXGI_SWAP_EFFECT_SEQUENTIAL;
         desc.OutputWindow=window.value;
         desc.Windowed=TRUE;
+        // Regression: normal device ancestry bypasses an export-only factory wrapper.
+        // This is an actual WARP runtime object graph, not a fabricated COM fixture.
+        {
+            ComPtr<IDXGIDevice> dxgiDevice;
+            ok(device.As(&dxgiDevice),"Device exposes native DXGI ancestry");
+            ComPtr<IDXGIAdapter> adapter;
+            ok(dxgiDevice->GetAdapter(&adapter),"Get actual device adapter");
+            ComPtr<IDXGIFactory> nativeFactory;
+            ok(adapter->GetParent(IID_PPV_ARGS(&nativeFactory)),"Get factory through device ancestry");
+            const auto beforeNative=snapshot();
+            ComPtr<IDXGISwapChain> nativeSwap;
+            ok(nativeFactory->CreateSwapChain(device.Get(),&desc,&nativeSwap),"Create swap through native ancestry");
+            ok(nativeSwap->Present(0,DXGI_PRESENT_TEST),"Present through native ancestry");
+            const auto afterNative=snapshot();
+            check(afterNative.swaps==beforeNative.swaps && afterNative.presents==beforeNative.presents,
+                  "Export-only bridge cannot observe the device ancestry route");
+        }
         ComPtr<IDXGISwapChain> swap;
         ok(factory->CreateSwapChain(device.Get(),&desc,&swap),"Create actual wrapped swap chain");
         ComPtr<IDXGISwapChain4> swap4;

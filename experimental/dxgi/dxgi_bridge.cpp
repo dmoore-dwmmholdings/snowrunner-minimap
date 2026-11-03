@@ -111,7 +111,9 @@ public:
 template<class T> void wrap_swap(T** out,IUnknown* parent) noexcept {
     if (!out || !*out) return;
     ComPtr<IDXGISwapChain4> real;
-    if (FAILED((*out)->QueryInterface(IID_PPV_ARGS(&real)))) return;
+    const auto version_status=(*out)->QueryInterface(IID_PPV_ARGS(&real));
+    srmm_probe_log("swap-version4-query",static_cast<unsigned long>(version_status));
+    if (FAILED(version_status)) return;
     auto* wrapper = new(std::nothrow) Swap(real.Get(),parent);
     if (!wrapper) return;
     T* replacement{};
@@ -134,20 +136,26 @@ public:
     ULONG STDMETHODCALLTYPE AddRef() override { return ++refs_; }
     ULONG STDMETHODCALLTYPE Release() override { const auto n=--refs_; if (!n) delete this; return n; }
     HRESULT STDMETHODCALLTYPE CreateSwapChain(IUnknown* device,DXGI_SWAP_CHAIN_DESC* desc,IDXGISwapChain** out) override {
-        const auto status=real_->CreateSwapChain(device,desc,out); if (SUCCEEDED(status)) wrap_swap(out,this); return status;
+        srmm_probe_log("create-swap-request");
+        const auto status=real_->CreateSwapChain(device,desc,out);
+        srmm_probe_log("create-swap-result",static_cast<unsigned long>(status));
+        if (SUCCEEDED(status)) wrap_swap(out,this); return status;
     }
     HRESULT STDMETHODCALLTYPE CreateSwapChainForHwnd(IUnknown* device,HWND window,const DXGI_SWAP_CHAIN_DESC1* desc,
         const DXGI_SWAP_CHAIN_FULLSCREEN_DESC* fullscreen,IDXGIOutput* restrictOutput,IDXGISwapChain1** out) override {
+        srmm_probe_log("create-swap-hwnd-request");
         const auto status=real_->CreateSwapChainForHwnd(device,window,desc,fullscreen,restrictOutput,out);
         if (SUCCEEDED(status)) wrap_swap(out,this); return status;
     }
     HRESULT STDMETHODCALLTYPE CreateSwapChainForCoreWindow(IUnknown* device,IUnknown* window,const DXGI_SWAP_CHAIN_DESC1* desc,
         IDXGIOutput* restrictOutput,IDXGISwapChain1** out) override {
+        srmm_probe_log("create-swap-core-window-request");
         const auto status=real_->CreateSwapChainForCoreWindow(device,window,desc,restrictOutput,out);
         if (SUCCEEDED(status)) wrap_swap(out,this); return status;
     }
     HRESULT STDMETHODCALLTYPE CreateSwapChainForComposition(IUnknown* device,const DXGI_SWAP_CHAIN_DESC1* desc,
         IDXGIOutput* restrictOutput,IDXGISwapChain1** out) override {
+        srmm_probe_log("create-swap-composition-request");
         const auto status=real_->CreateSwapChainForComposition(device,desc,restrictOutput,out);
         if (SUCCEEDED(status)) wrap_swap(out,this); return status;
     }

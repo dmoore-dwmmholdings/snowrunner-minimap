@@ -1,13 +1,13 @@
 # Experimental DXGI startup bridge
 
-Original implementation. **Not installed or verified in SnowRunner.** This directory provides a concrete startup/COM ownership experiment, a renderer that writes to an owned swap-chain backbuffer, and an optional game bootstrap diagnostic. Passing these tests is not evidence of live telemetry, Steam overlay compatibility, or a working in-game minimap.
+Original implementation. **Experimental; no working in-game minimap is established.** This directory provides a concrete startup/COM ownership experiment, a renderer that writes to an owned swap-chain backbuffer, and an optional game bootstrap diagnostic. Passing these tests is not evidence of live telemetry, Steam overlay compatibility, or a working in-game minimap.
 
 ## Build and test
 
 Windows, MSVC x64 and the Windows SDK are required. No packages or third-party code are downloaded.
 
 ```powershell
-cmake -S experimental/dxgi -B build-dxgi -A x64
+cmake -S experimental/dxgi -B build-dxgi -G "Visual Studio 17 2022" -A x64
 cmake --build build-dxgi --config Debug
 ctest --test-dir build-dxgi -C Debug --output-on-failure
 cmake --build build-dxgi --config Release
@@ -35,16 +35,16 @@ Sources: [Windows DLL search order](https://learn.microsoft.com/en-us/windows/wi
 ## Optional bootstrap diagnostic
 
 ```powershell
-cmake -S experimental/dxgi -B build-dxgi -A x64 -DSRMM_BUILD_GAME_PROBE=ON
+cmake -S experimental/dxgi -B build-dxgi -G "Visual Studio 17 2022" -A x64 -DSRMM_BUILD_GAME_PROBE=ON
 cmake --build build-dxgi --config Release
 ctest --test-dir build-dxgi -C Release --output-on-failure
 ```
 
 This creates a separate `build-dxgi/game-probe/Release/dxgi.dll`. That exact build is also exercised in an owned host. In addition to the owned executable, it can wrap factories in `SnowRunner.exe` **only if the executable SHA-256 matches the existing inspected-build fingerprint**. A matching hash is an eligibility check, not a compatibility guarantee.
 
-The probe does not draw anything in SnowRunner and does not read game memory. It writes bounded counters (factory creation, swap creation, Present, resize, unsupported interface requests and release) to `%LOCALAPPDATA%/SnowRunnerMinimap/bootstrap.log`, at most 1 MiB. No raw addresses, pose or saves are logged and no network requests occur.
+The probe does not draw anything in SnowRunner and does not read game memory. It writes bounded counters (factory creation, adapter enumeration, swap creation requests/results, swap-interface negotiation, Present, resize, unsupported interface requests and release) to `%LOCALAPPDATA%/SnowRunnerMinimap/bootstrap.log`, at most 1 MiB. No raw addresses, pose or saves are logged and no network requests occur.
 
-**No deployment occurs during build or test.** A future controlled startup test would add only this original DLL to the game's executable directory when no `dxgi.dll` already exists. It requires the user's go-ahead for a normal game exit/restart; preserve a fresh save backup first. The current session must not be killed or restarted automatically. Check startup, factory/swap/Present counters, normal exit and Steam overlay coexistence before enabling game rendering. If the game cannot start or interface compatibility fails, stop the attempt; with the game closed, move only the hash-verified added DLL out of its directory. Never overwrite another mod or remove an unrecognized DLL.
+**No deployment occurs during build or test.** A controlled startup test adds only this original DLL to the game's executable directory when no `dxgi.dll` already exists. It requires the user's go-ahead for a normal game exit/restart; preserve a fresh save backup first. The current session must not be killed or restarted automatically. Check startup, factory/swap/Present counters, normal exit and Steam overlay coexistence before enabling game rendering. If the game cannot start or interface compatibility fails, stop the attempt; with the game closed, move only the hash-verified added DLL out of its directory. Never overwrite another mod or remove an unrecognized DLL.
 
 The old remote launcher and its byte compatibility guard are unchanged. This experiment does not relax that guard or retry the refused injection operation.
 
@@ -66,3 +66,13 @@ python tools/extract_map_texture.py '<local shared_textures.pak>' level_us_01_02
 ```
 
 The DDS preserves storage orientation. Use the renderer's explicit texture flip when alignment evidence calls for it. Texture orientation by itself does not establish the world-to-map affine transform.
+
+## Device ancestry regression and next implementation boundary
+
+The owned host now also uses the documented `ID3D11Device::QueryInterface(IDXGIDevice)` -> `GetAdapter` -> `GetParent(IDXGIFactory)` route. It creates and presents an actual WARP swap chain through that factory and verifies that the export-only bridge's swap/Present counters do not change. This reproduces a concrete coverage gap: wrapping exported factory results does not intercept every factory obtained through a device.
+
+An additional `D3D11CreateDeviceAndSwapChain` export wrapper alone would not cover applications that call `D3D11CreateDevice` and obtain a factory through device ancestry. A partial device facade is also insufficient: context/resource `GetDevice` calls would expose the original device, violating identity expectations unless the related object graph is handled consistently. Unknown-interface pass-through must not be treated as proof of consistent COM identity.
+
+A complete next implementation needs either an identity-preserving device/adapter/factory graph, including context/resource return paths and native-call unwrapping, or an independently reviewed render interception route with established lifetime and compatibility. Neither is implemented here. Do not replace the live object's vtable, relax the existing launcher guard, or assert support merely because the owned direct-factory tests pass.
+
+Primary API contracts: [device adapter](https://learn.microsoft.com/en-us/windows/win32/api/dxgi/nf-dxgi-idxgidevice-getadapter), [DXGI parent](https://learn.microsoft.com/en-us/windows/win32/api/dxgi/nf-dxgi-idxgiobject-getparent), [device creation](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-d3d11createdevice).
