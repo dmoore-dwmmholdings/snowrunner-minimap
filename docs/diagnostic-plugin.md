@@ -1,5 +1,7 @@
 # Isolated Windows diagnostic plugin
 
+Follow-up: the [live validation checkpoint](live-validation.md) adds an original guarded launcher and reports the actual game load attempt. This document records the earlier isolated DLL baseline.
+
 An original diagnostic DLL and a console test host are implemented. They exercise the existing synthetic frame controller across a real Windows DLL boundary. They do not connect to SnowRunner and are not an ASI/proxy loader, telemetry reader or renderer.
 
 ## Build and run
