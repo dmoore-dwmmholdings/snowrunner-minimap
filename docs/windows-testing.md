@@ -1,6 +1,6 @@
 # Windows build and testing handoff
 
-**Status: not run on Windows.** The current prototype is a console geometry demo, not an installable SnowRunner mod or overlay. Do not copy it into the game directory.
+**Status: built and tested on Windows x64 with MSVC on 2026-11-03.** All 86 checks pass across 3 CTest cases. The current prototype is a console geometry demo, not an installable SnowRunner mod or overlay. Do not copy it into the game directory. See [inspection evidence and remaining work](windows-inspection.md).
 
 ## Build the portable prototype
 
@@ -9,7 +9,7 @@ Use an existing Git installation, CMake 3.20+ and Visual Studio 2022 C++ build t
 ```powershell
 git clone https://github.com/dmoore-dwmmholdings/snowrunner-minimap.git
 cd snowrunner-minimap
-cmake -S . -B build -A x64
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Debug
 ctest --test-dir build -C Debug --output-on-failure
 # UTF-8 output avoids Windows PowerShell's default UTF-16 redirection.
@@ -22,13 +22,15 @@ The expected console test output is a check count and CTest success. The preview
 
 ## Metadata collection before native work
 
-The following repository script is prepared but **not tested on Windows**. It reads the named executable's metadata/hash and writes an ignored local manifest in `build/`. It never launches or attaches to the game. Supply the actual storefront, version visible in the game and graphics/display mode; use `Unknown` where appropriate. It does not inspect or verify the binary architecture or actual graphics API. Do not change an execution policy or security settings to make it run.
+The following repository script has been run against the installed Steam executable. It reads metadata/hash and verifies the PE machine and optional-header architecture, then writes an ignored local manifest in `build/`. It never launches or attaches to the game. It rejects malformed or inconsistent headers, unsupported architectures and DLLs; this is architecture inspection, not full executable validation or authentication. The file is held read-only without write sharing while its architecture and hash are read. Runtime fields default to `Unknown`; supply a displayed version and graphics/display mode only when actually observed. An imported graphics DLL alone is not runtime verification. Do not change an execution policy or security settings to make it run.
 
 ```powershell
-.\tools\Collect-GameIdentity.ps1 -GameExe 'C:\path\to\SnowRunner.exe' -Storefront Steam -DisplayedVersion 'copy actual version' -GraphicsApi Unknown -DisplayMode Unknown
+.\tools\Collect-GameIdentity.ps1 -GameExe 'C:\path\to\SnowRunner.exe' -Storefront Steam
+# Optional: -SteamBuildId '<digits from Steam app manifest>'
+# Optional after observation: -DisplayedVersion 'actual UI version' -GraphicsApi DX11 -DisplayMode Borderless
 ```
 
-Review the output locally; it excludes the absolute game path and user/account information. The manifest is a starting input to [native integration validation](native-integration.md), not a supported-build declaration. Installed terms/protection policy, intended test setting and explicit approval for a concrete native runtime test remain required. Merely collecting this file does not authorize loading a DLL or modifying the installation.
+Review the output locally; it excludes the absolute game path and user/account information. Version 2 of the preflight manifest distinguishes the executable product version, caller-reported Steam build ID and displayed UI version. The manifest is a starting input to [native integration validation](native-integration.md), not a supported-build declaration. The user authorized read-only REA inspection of this installation. Merely collecting this file does not authorize loading a DLL or modifying the installation.
 
 ## Future game acceptance checklist (all pending)
 

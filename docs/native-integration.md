@@ -1,6 +1,6 @@
 # Native in-game research and adapter boundary
 
-Updated 2026-11-03. The target remains an in-game Windows minimap. This checkpoint contains original portable code and synthetic fixtures; no game process has been accessed.
+Updated 2026-11-03. The target remains an in-game Windows minimap. The Windows checkpoint now includes a successful MSVC build, read-only executable inspection, normal game launch, display-setting observation and process module enumeration. No game memory has been scanned, debugger attached or native mod loaded. See [Windows evidence and the REA analysis timeout](windows-inspection.md).
 
 ## Precedent and version limits
 
@@ -27,9 +27,9 @@ This is a single-threaded contract, not a concurrency mechanism. A future native
 
 ## Required before actual integration
 
-1. Windows machine access for local builds, with a licensed installation; storefront, displayed game version, executable SHA-256/architecture and actual graphics API/mode. The prepared identity collector reads metadata only and does not launch the game.
+1. Windows build access, Steam build identity and executable SHA-256/architecture are now verified; borderless display mode was observed. Displayed game version and active graphics API remain unresolved. The tested identity collector reads metadata only and does not launch the game.
 2. Review the applicable installed terms and relevant protection/online-mode policy for the intended test setting. Establish dependency/source rights if any reuse is proposed.
-3. Explicit authorization for the concrete native runtime test before process attachment, DLL loading/hooks or game-directory modifications. The present phase authorizes read-only research and mock development only.
+3. The user subsequently authorized REA to inspect the game on Windows. Scoped read-only inspection may proceed. DLL loading, injection, hooks and game-directory modifications still require explicit approval of a concrete proposal; no such operation has been performed.
 4. User-local map imagery with permission to use it, plus independent calibration measurements. Do not publish game assets or adopt a remote CDN by assumption.
 5. On the exact Windows build, validate map identity, vehicle position and heading conventions, coherent reads, timing, transitions, graphics state preservation, resize/device lifecycle, input focus, shutdown and uninstall. A build fingerprint is an identifier, not evidence these tests passed.
 

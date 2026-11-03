@@ -2,7 +2,7 @@
 
 An early Windows minimap mod project, developed on macOS for later Windows testing.
 
-**Current state:** native in-game mod research, portable geometry and mock-driven adapter prototype. There is no live SnowRunner connection or working in-game mod yet. The requested in-game path is being pursued; Windows validation remains pending.
+**Current state:** native in-game mod research, portable geometry and mock-driven adapter prototype. The Windows x64 build passes 86 checks (75 C++ checks and 11 PE inspection checks). There is no live SnowRunner connection or working in-game mod yet; game runtime validation remains pending. See the [Windows inspection checkpoint](docs/windows-inspection.md).
 
 [Live Andare board](https://andare.bottega-suite.com/w/RLdpCCh1YgoQVD5lYRoU/p/SNOW/board) · [Feasibility](docs/feasibility.md) · [Native research and boundaries](docs/native-integration.md) · [Windows handoff](docs/windows-testing.md)
 
@@ -21,7 +21,7 @@ Open the SVG in a browser. It shows four heading-up replay samples on original s
 
 The core supports affine calibration from three landmarks, map-image projection, cardinal heading rotation, zoom, circular bounds and telemetry freshness classification. Its internal world convention is east/north and is explicitly **not** a verified SnowRunner coordinate convention. The future game adapter must convert and verify it.
 
-The demo runs through the same telemetry/frame contract used in the mock tests. Samples carry exact build identity and session/map/vehicle identifiers. Invalid, stale, mismatched or failed reads clear the marker; a native candidate is always rejected in the current prototype. No process-access or injection implementation is included. Current Mac checks: 27 geometry checks plus 48 adapter checks, 2/2 CTest cases passing.
+The demo runs through the same telemetry/frame contract used in the mock tests. Samples carry exact build identity and session/map/vehicle identifiers. Invalid, stale, mismatched or failed reads clear the marker; a native candidate is always rejected in the current prototype. No process-access or injection implementation is included. The Mac checkpoint passed 27 geometry checks plus 48 adapter checks. Windows adds a PowerShell PE inspection test, with 3/3 CTest cases passing on MSVC.
 
 ## Plan
 
