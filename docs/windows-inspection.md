@@ -38,6 +38,8 @@ Raw evidence stays local in ignored `build/` files: `windows-identity.local.json
 
 ## Next integration step
 
+Follow-up offline inspection located bounded minimap/truck modules in the shipped script bundle. See [the script inspection report](script-inspection.md) for exact targets, the original read-only inspector and eight passing synthetic tests. This is now the preferred next offline investigation before another whole-executable analysis.
+
 Continue with a scoped static analysis pass to locate candidate map/vehicle data references on this fingerprint. Validate any candidates through read-only inspection in a single-player map against controlled movement, and confirm the active renderer independently. No live source or offsets have been established yet. The user's read-only REA inspection authorization covers investigation; there is no concrete DLL/hook installation ready for approval yet.
 
 Only after a real data source is validated should the renderer consume native samples. DLL loading, injection, hooks and game-directory modifications require a separate concrete proposal and approval. No such operation was performed. Map imagery and coordinate calibration also remain unresolved. SNOW-4 remains unfinished; a successful Windows build does not complete the in-game minimap.

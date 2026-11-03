@@ -33,3 +33,7 @@ The demo runs through the same telemetry/frame contract used in the mock tests. 
 6. SNOW-6: local Windows build, runtime validation and uninstall instructions.
 
 No paid CI workflows, game assets, credentials, executable downloads or mod-marketplace publication are included.
+
+## Offline script investigation
+
+The Windows installation contains a compiled script bundle with bounded minimap and truck modules. The [offline inspection report](docs/script-inspection.md) records candidate identifiers and their limits. `tools/inspect_script_bundle.py` inventories the observed container without executing or extracting scripts; its eight synthetic tests pass. This is research tooling, not a game adapter or installer.
