@@ -36,4 +36,4 @@ No paid CI workflows, game assets, credentials, executable downloads or mod-mark
 
 ## Offline script investigation
 
-The Windows installation contains a compiled script bundle with bounded minimap and truck modules. The [offline inspection report](docs/script-inspection.md) records candidate identifiers and their limits. `tools/inspect_script_bundle.py` inventories the observed container without executing or extracting scripts; its eight synthetic tests pass. This is research tooling, not a game adapter or installer.
+The Windows installation contains a compiled script bundle with bounded minimap and truck modules. The [offline inspection report](docs/script-inspection.md) and [pose/loading assessment](docs/pose-and-loading.md) distinguish observed references from inferred declarations and record the unresolved loading boundary. The original Python inspectors read framing and metadata without executing scripts or emitting bytecode; all 23 synthetic inspection tests pass. This is research tooling, not a game adapter or installer.

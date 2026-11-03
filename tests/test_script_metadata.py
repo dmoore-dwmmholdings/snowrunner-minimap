@@ -1,5 +1,6 @@
 """Original synthetic metadata fixtures; no game bytecode or assets."""
 import struct
+import copy
 import sys
 import unittest
 from pathlib import Path
@@ -95,6 +96,41 @@ class MetadataTests(unittest.TestCase):
         for record in ([(1, 0, 0), (1, 0, 0)], [(1, 2, b'')]):
             with self.assertRaises(ValueError):
                 metadata.one(record, 1, 0)
+
+    def match_fixture(self):
+        return {'name': 'synthetic', **metadata.inspect_module(fixture())}
+
+    def test_metadata_match_is_candidate_only(self):
+        matches = metadata.reference_matches([self.match_fixture()])
+        self.assertEqual(matches[0]['status'], 'unique_metadata_candidate')
+        self.assertEqual(matches[0]['declarationModules'], ['synthetic'])
+
+    def test_duplicate_owner_stays_ambiguous(self):
+        first = self.match_fixture()
+        second = copy.deepcopy(first)
+        second['name'] = 'another_module'
+        self.assertEqual(metadata.reference_matches([first, second])[0]['status'], 'ambiguous')
+
+    def test_shape_mismatch_is_not_matched(self):
+        module = self.match_fixture()
+        module['declarations'][0]['shapeCandidate']['return'] = 'int'
+        self.assertEqual(metadata.reference_matches([module])[0]['status'],
+                         'shape_mismatch_or_unresolved')
+
+    def test_unresolved_types_never_match(self):
+        module = self.match_fixture()
+        for record in module['declarations'] + module['references']:
+            record['shapeCandidate'] = {'return': {'unresolvedType': 42}, 'parameters': []}
+        result = metadata.reference_matches([module])[0]
+        self.assertEqual(result['status'], 'unresolved_type')
+        self.assertEqual(result['declarationModules'], [])
+
+    def test_missing_owner_or_slot_is_not_matched(self):
+        for key, value in (('ownerTypeCandidate', 'Different'), ('slot', 99)):
+            module = self.match_fixture()
+            module['references'][0][key] = value
+            self.assertEqual(metadata.reference_matches([module])[0]['status'],
+                             'no_selected_declaration')
 
 
 if __name__ == '__main__':

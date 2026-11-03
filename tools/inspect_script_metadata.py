@@ -16,6 +16,17 @@ DEFAULT_MODULES = (
     'game.level_data.level_data',
     'game.minimap',
 )
+POSE_MODULES = (
+    'ui.components.minimap.objects.minimap_truck_controller',
+    'game.truck_manager.trucks_manager',
+    'game.truck',
+    'game.truck_wrapper.truck_wrapper',
+    'game.truck_wrapper.truck_wrapper_ssl_truck',
+    'math.transform',
+    'math.transform_interface',
+    'game.level_data.level_data',
+    'game.game_camera.mr_camera_base',
+)
 MAX_MODULE_BYTES = 1024 * 1024
 
 
@@ -153,6 +164,48 @@ def inspect_module(chunk):
     return {'declarations': declarations, 'references': references}
 
 
+def reference_matches(modules):
+    """Corroborate records within the selected set, never infer runtime calls.
+
+    Owner names are not fully qualified by this inferred schema. Even a unique
+    match is only a candidate; duplicate owners remain explicitly ambiguous.
+    """
+    declarations = {}
+    for module in modules:
+        for declaration in module['declarations']:
+            key = (declaration['owner'], declaration['name'], declaration['slot'])
+            declarations.setdefault(key, []).append((module['name'], declaration))
+
+    def unresolved(value):
+        if isinstance(value, dict):
+            return 'unresolvedType' in value or any(unresolved(v) for v in value.values())
+        return isinstance(value, list) and any(unresolved(v) for v in value)
+
+    results = []
+    for module in modules:
+        for index, reference in enumerate(module['references']):
+            owner = reference['ownerTypeCandidate']
+            shape = reference['shapeCandidate']
+            candidates = declarations.get((owner, reference['name'], reference['slot']), []) \
+                if isinstance(owner, str) else []
+            matches = [name for name, decl in candidates
+                       if not unresolved(decl['shapeCandidate']) and decl['shapeCandidate'] == shape]
+            if unresolved(shape) or not isinstance(owner, str):
+                status, matches = 'unresolved_type', []
+            elif not candidates:
+                status = 'no_selected_declaration'
+            elif len(matches) > 1:
+                status = 'ambiguous'
+            elif not matches:
+                status = 'shape_mismatch_or_unresolved'
+            else:
+                status = 'unique_metadata_candidate'
+            results.append({'sourceModule': module['name'], 'referenceIndex': index,
+                            'owner': owner, 'name': reference['name'], 'slot': reference['slot'],
+                            'status': status, 'declarationModules': matches})
+    return results
+
+
 def inspect_archive(path, member, selected):
     blob = read_archive_bundle(path, member)
     modules = {m['name']: m for m in parse_bundle(blob)}
@@ -164,9 +217,11 @@ def inspect_archive(path, member, selected):
         start = module['offset']
         results.append({**module, **inspect_module(blob[start:start + module['bytes']])})
     return {'schema': 'snowrunner-script-metadata-candidates-v1', 'modules': results,
+            'referenceMatches': reference_matches(results),
             'limitations': ['Inferred schema; declarations and references are record-role candidates.',
                             'Bodyless records do not prove native implementation or external accessibility.',
                             'Type shapes do not establish ABI, units, lifetimes or a mod loader.',
+                            'Reference matches corroborate metadata, not calls; owner names are not fully qualified.',
                             'No bytecode, runtime addresses or game assets are emitted.']}
 
 
@@ -175,10 +230,13 @@ def main():
     parser.add_argument('archive', type=Path)
     parser.add_argument('--member', default='[ssl_cache]/initial_release.sslbundle')
     parser.add_argument('--module', action='append', dest='modules')
+    parser.add_argument('--preset', choices=('minimap', 'truck-pose'), default='minimap',
+                        help='Bounded module selection, used when --module is absent.')
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
     try:
-        report = inspect_archive(args.archive, args.member, args.modules or DEFAULT_MODULES)
+        selected = args.modules or (POSE_MODULES if args.preset == 'truck-pose' else DEFAULT_MODULES)
+        report = inspect_archive(args.archive, args.member, selected)
         text = json.dumps(report, indent=2) + '\n'
         if args.output:
             with args.output.open('x', encoding='utf-8') as stream:
