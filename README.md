@@ -2,7 +2,7 @@
 
 An early Windows minimap mod project, developed on macOS for later Windows testing.
 
-**Current state:** native in-game mod research, portable geometry and mock-driven adapter prototype. The Windows x64 build passes 86 checks (75 C++ checks and 11 PE inspection checks). There is no live SnowRunner connection or working in-game mod yet; game runtime validation remains pending. See the [Windows inspection checkpoint](docs/windows-inspection.md).
+**Current state:** native in-game mod research, portable geometry and mock-driven adapter prototype, plus an [isolated Windows diagnostic DLL and host](docs/diagnostic-plugin.md). Windows x64 Debug and Release pass 4/4 CTest cases, including 258 diagnostic checks across three load/unload cycles per configuration. There is no live SnowRunner connection or working in-game mod yet; game runtime validation remains pending. See the [Windows inspection checkpoint](docs/windows-inspection.md).
 
 [Live Andare board](https://andare.bottega-suite.com/w/RLdpCCh1YgoQVD5lYRoU/p/SNOW/board) · [Feasibility](docs/feasibility.md) · [Native research and boundaries](docs/native-integration.md) · [Windows handoff](docs/windows-testing.md)
 
