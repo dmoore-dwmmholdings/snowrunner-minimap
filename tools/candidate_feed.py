@@ -41,6 +41,30 @@ def encode_packet(pid, session, sequence, tick_ms, build, level, pose):
     return bytes(packet)
 
 
+def replace_packet(temporary, destination, replace=os.replace, pause=time.sleep):
+    # Windows readers/security scanners can briefly retain a rename-sensitive handle.
+    # Retry only ordinary sharing/access conflicts; never alter their protection.
+    for attempt in range(11):
+        try:
+            replace(temporary, destination)
+            return
+        except OSError as error:
+            if getattr(error, 'winerror', None) not in (5, 32) or attempt == 10:
+                raise
+            pause(.025)
+
+
+def resume_sequence(data, pid, session, level):
+    if len(data) != 256 or data[:8] != b'SRMMTEL1' or struct.unpack_from('<2I',data,8) != (1,256):
+        raise ValueError('Invalid prior diagnostic packet.')
+    if (struct.unpack_from('<I',data,20)[0] != pid or struct.unpack_from('<Q',data,40)[0] != session or
+            data[48:112] != level.encode('ascii').ljust(64,b'\0') or data[112:144] != bytes.fromhex(EXPECTED_SHA256)):
+        raise ValueError('Prior packet belongs to another context.')
+    sequence = struct.unpack_from('<Q',data,24)[0]
+    if not 0 < sequence < 2**64-1:raise ValueError('Invalid prior sequence.')
+    return sequence
+
+
 def select_roots(report, sections):
     if report.get('schema') != 'srmm-live-candidates-v1' or report.get('executableSha256') != EXPECTED_SHA256:
         raise ValueError('Wrong discovery report schema/build.')
@@ -82,12 +106,13 @@ def main():
     parser.add_argument('--map', required=True)
     parser.add_argument('--output-dir', type=Path, required=True)
     parser.add_argument('--seconds', type=int, default=30)
+    parser.add_argument('--resume', action='store_true', help='Resume the exact explicit private session after a stopped publisher.')
     parser.add_argument('--session', type=int, help='Explicit nonzero diagnostic session identity prepared before game startup.')
     args = parser.parse_args()
     if not 1 <= args.seconds <= 600 or not re.fullmatch(r'level_[a-z0-9_]{3,48}', args.map):
         parser.error('Duration must be 1..600 seconds and map must be a canonical level identifier.')
     if args.session is not None and not 0 < args.session < 2**64:parser.error('Session must be a nonzero uint64.')
-    reader = None;directory = None;sequence = 0;session = args.session or secrets.randbits(64) or 1
+    reader = None;directory = None;lock = None;sequence = 0;session = args.session or secrets.randbits(64) or 1
     try:
         if args.layout.stat().st_size > 1024*1024:
             raise ValueError('Discovery report exceeds size limit.')
@@ -101,7 +126,18 @@ def main():
         if len(bases) != 1:raise ValueError('Ambiguous executable module.')
         output = args.output_dir.resolve()
         if output.is_relative_to(exe.parents[2]):raise ValueError('Output must remain outside the game installation.')
-        output.mkdir(exist_ok=False);directory = output
+        if args.resume and args.session is None:raise ValueError('Resume requires an explicit session.')
+        if not args.resume:output.mkdir(exist_ok=False)
+        elif not output.is_dir():raise ValueError('Resume directory missing.')
+        import msvcrt
+        lock = (output/'publisher.local.lock').open('a+b')
+        lock.seek(0);msvcrt.locking(lock.fileno(),msvcrt.LK_NBLCK,1)
+        if args.resume:
+            identity = json.loads((output/'session.local.json').read_text())
+            if any(identity.get(k) != v for k,v in {'pid':args.pid,'session':session,'map':args.map,'build':EXPECTED_SHA256}.items()):
+                raise ValueError('Resume identity does not match.')
+            sequence = resume_sequence((output/'candidate.local.bin').read_bytes(),args.pid,session,args.map)
+        directory = output
         clock = ctypes.WinDLL('kernel32').GetTickCount64;clock.restype = ctypes.c_uint64
         (directory/'session.local.json').write_text(json.dumps({'schema':'srmm-diagnostic-feed-v1','pid':args.pid,'session':session,'map':args.map,'build':EXPECTED_SHA256,'clock':'GetTickCount64','status':'unvalidated candidate; no gameplay-state signal'}))
         def write(level, pose, sampled_tick=None):
@@ -109,7 +145,7 @@ def main():
             sequence += 1
             payload = encode_packet(args.pid,session,sequence,clock() if sampled_tick is None else sampled_tick,EXPECTED_SHA256,level or args.map,pose)
             temporary = directory/'next.local.tmp';temporary.write_bytes(payload)
-            os.replace(temporary,directory/'candidate.local.bin')
+            replace_packet(temporary,directory/'candidate.local.bin')
         deadline = time.monotonic() + args.seconds
         try:
             while time.monotonic() < deadline:
@@ -123,6 +159,7 @@ def main():
         parser.exit(1,f'Candidate feed stopped: {error}\n')
     finally:
         if reader:reader.close()
+        if lock:lock.close()
 
 
 if __name__ == '__main__':main()

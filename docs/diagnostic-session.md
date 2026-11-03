@@ -47,6 +47,11 @@ prior layout report, map and a new private output directory. It emits unavailabl
 on normal stop; a stalled feed becomes stale within 750 ms. Do not share imported
 game assets, session configs, raw telemetry or save backups in this repository.
 
-Validation: eight Release CTest suites and 42 Python tests pass. These automated
+Validation: eight Release CTest suites and 47 Python tests pass. These automated
 checks use owned fixtures and synthetic packets; they do not establish live map
 alignment, movement or gameplay-transition correctness.
+
+The publisher retries ordinary Windows sharing/access conflicts for at most 250 ms.
+An explicit --resume reopens only the same PID/session/map/build and continues its
+sequence. A Windows byte-range lock prevents simultaneous publishers for that
+directory. It never disables scanners or changes file permissions.
