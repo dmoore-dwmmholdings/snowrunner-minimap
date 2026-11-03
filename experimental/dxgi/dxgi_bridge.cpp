@@ -17,7 +17,8 @@ using Microsoft::WRL::ComPtr;
 namespace {
 std::atomic<unsigned long long> factories{}, swaps{}, presents{}, resizes{}, live_factories{}, live_swaps{}, unknown_queries{};
 std::atomic<unsigned long long> rendered{},render_failures{};
-// No DllMain, thread, remote call, import write, vtable patch or code detour.
+// No DllMain, worker, remote call, import write or code detour.
+// The opt-in factory route replaces a guarded native instance dispatch pointer.
 HMODULE system_dxgi() noexcept {
     static HMODULE module = []() noexcept -> HMODULE {
         wchar_t path[32768]{};
@@ -121,6 +122,9 @@ template<class T> void wrap_swap(T** out,IUnknown* parent) noexcept {
     if (SUCCEEDED(status)) { (*out)->Release(); *out=replacement; }
     wrapper->Release();
 }
+#ifdef SRMM_LOCAL_FACTORY_ROUTE
+#include "factory_route.inc"
+#endif
 class Factory final : public IDXGIFactory7 {
     std::atomic<ULONG> refs_{1};
     ComPtr<IDXGIFactory7> real_;
@@ -166,6 +170,10 @@ void wrap_factory(REFIID id,void** out) noexcept {
     auto* original=static_cast<IUnknown*>(*out);
     ComPtr<IDXGIFactory7> real;
     if (FAILED(original->QueryInterface(IID_PPV_ARGS(&real)))) return;
+#ifdef SRMM_LOCAL_FACTORY_ROUTE
+    install_factory_route(real.Get());
+    return;
+#endif
     retain_bridge();
     auto* wrapper=new(std::nothrow) Factory(real.Get());
     if (!wrapper) return;
@@ -193,4 +201,17 @@ extern "C" __declspec(dllexport) BOOL WINAPI srmm_bridge_stats(SrmmBridgeStats* 
     if (!out || out->size!=sizeof(*out)) return FALSE;
     *out={sizeof(*out),1,factories.load(),swaps.load(),presents.load(),resizes.load(),live_factories.load(),live_swaps.load(),unknown_queries.load(),rendered.load(),render_failures.load()};
     return TRUE;
+}
+
+extern "C" __declspec(dllexport) BOOL WINAPI srmm_route_device(ID3D11Device* device) {
+#ifdef SRMM_LOCAL_FACTORY_ROUTE
+    if(!device||!wrapped_application())return FALSE;
+    ComPtr<IDXGIDevice> dxgi;ComPtr<IDXGIAdapter> adapter;ComPtr<IDXGIFactory7> factory;
+    if(FAILED(device->QueryInterface(IID_PPV_ARGS(&dxgi)))||FAILED(dxgi->GetAdapter(&adapter))||
+       FAILED(adapter->GetParent(IID_PPV_ARGS(&factory))))return FALSE;
+    const auto result=install_factory_route(factory.Get());
+    srmm_probe_log("device-factory-route",result);return result;
+#else
+    (void)device;return FALSE;
+#endif
 }
