@@ -2,6 +2,7 @@
 #define NOMINMAX
 #include <windows.h>
 #include <tlhelp32.h>
+#include <psapi.h>
 #include <bcrypt.h>
 #include "diagnostic_api.h"
 #include <array>
@@ -91,8 +92,20 @@ uintptr_t find_module(DWORD pid, const std::filesystem::path& path) {
     for (const auto& module : modules(pid)) if (same_path(module.path, path)) return module.base;
     return 0;
 }
+bool inspect_read(HANDLE process, uintptr_t address, void* output, SIZE_T size) {
+    if (!address || !output || !size || size > 32) return false;
+    MEMORY_BASIC_INFORMATION info{};
+    if (VirtualQueryEx(process, reinterpret_cast<void*>(address), &info, sizeof(info)) != sizeof(info)) return false;
+    const auto base = reinterpret_cast<uintptr_t>(info.BaseAddress);
+    const bool readable = (info.Protect & (PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY |
+                                           PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)) != 0;
+    if (info.State != MEM_COMMIT || !readable || (info.Protect & (PAGE_GUARD | PAGE_NOACCESS)) ||
+        address < base || info.RegionSize < size || address - base > info.RegionSize - size) return false;
+    SIZE_T received = 0;
+    return ReadProcessMemory(process, reinterpret_cast<void*>(address), output, size, &received) && received == size;
+}
 void describe_entry_branch(DWORD pid, HANDLE process, uintptr_t address,
-                           const unsigned char* bytes, const char* label) {
+                           const unsigned char* bytes, const char* label, unsigned remaining_hops = 1) {
     uintptr_t destination = 0;
     const char* kind = "unrecognized entry (not followed)";
     if (bytes[0] == 0xe9) {
@@ -103,9 +116,7 @@ void describe_entry_branch(DWORD pid, HANDLE process, uintptr_t address,
     } else if (bytes[0] == 0xff && bytes[1] == 0x25) {
         int32_t displacement = 0;
         std::memcpy(&displacement, bytes + 2, sizeof(displacement));
-        SIZE_T received = 0;
-        if (!ReadProcessMemory(process, reinterpret_cast<void*>(address + 6 + displacement),
-                               &destination, sizeof(destination), &received) || received != sizeof(destination))
+        if (!inspect_read(process, address + 6 + displacement, &destination, sizeof(destination)))
             destination = 0;
         kind = "indirect jump";
     }
@@ -118,8 +129,31 @@ void describe_entry_branch(DWORD pid, HANDLE process, uintptr_t address,
             }
         }
         std::cout << " into memory outside enumerated modules";
+        MEMORY_BASIC_INFORMATION info{};
+        if (VirtualQueryEx(process, reinterpret_cast<void*>(destination), &info, sizeof(info)) != sizeof(info)) {
+            std::cout << "; region query failed (Win32 " << GetLastError() << ")\n";
+            return;
+        }
+        std::cout << "; state=0x" << std::hex << info.State << " type=0x" << info.Type
+                  << " protection=0x" << info.Protect << std::dec << " regionBytes=" << info.RegionSize << '\n';
+        std::array<wchar_t, 32768> mapped{};
+        DWORD mapped_count = K32GetMappedFileNameW(process, reinterpret_cast<void*>(destination), mapped.data(),
+                                                static_cast<DWORD>(mapped.size()));
+        if (mapped_count && mapped_count < mapped.size())
+            std::wcout << L"Mapped backing file: " << std::filesystem::path(mapped.data()).filename().wstring() << L'\n';
+        else
+            std::cout << "Mapped backing file unavailable (Win32 " << GetLastError() << ")\n";
+        // Inspect at most one additional small branch stub. Never execute it,
+        // scan its allocation, change protections, or search for a bypass path.
+        if (remaining_hops) {
+            std::array<unsigned char, 16> stub{};
+            if (inspect_read(process, destination, stub.data(), stub.size()))
+                describe_entry_branch(pid, process, destination, stub.data(), "Bounded next entry", remaining_hops - 1);
+            else std::cout << "Bounded next entry unavailable; stopped\n";
+        }
+        return;
     }
-    std::cout << '\n'; // Attribution only; never follow, patch or execute the destination.
+    std::cout << '\n'; // Attribution only; never patch or execute the destination.
 }
 uintptr_t remote_system_function(DWORD pid, HANDLE process, const char* name) {
     FARPROC function = GetProcAddress(GetModuleHandleW(L"kernel32.dll"), name);
@@ -200,6 +234,17 @@ void unload_diagnostic(HANDLE process, DWORD pid, const std::filesystem::path& d
     if (find_module(pid, dll)) throw std::runtime_error("Module remains loaded; no repeated decrement attempted.");
 }
 void self_test(const std::filesystem::path& directory, const std::filesystem::path& dll) {
+    std::array<unsigned char, 16> source{1, 2, 3, 4}, observed{};
+    if (!inspect_read(GetCurrentProcess(), reinterpret_cast<uintptr_t>(source.data()), observed.data(), observed.size()) ||
+        source != observed || inspect_read(GetCurrentProcess(), 0, observed.data(), observed.size()) ||
+        inspect_read(GetCurrentProcess(), reinterpret_cast<uintptr_t>(source.data()), observed.data(), 33))
+        throw std::runtime_error("Bounded reader fixture failed.");
+    void* inaccessible = VirtualAlloc(nullptr, 4096, MEM_RESERVE | MEM_COMMIT, PAGE_NOACCESS);
+    if (!inaccessible) fail("Owned unreadable fixture allocation");
+    const bool incorrectly_read = inspect_read(GetCurrentProcess(), reinterpret_cast<uintptr_t>(inaccessible), observed.data(), 1);
+    VirtualFree(inaccessible, 0, MEM_RELEASE);
+    if (incorrectly_read) throw std::runtime_error("Reader accepted inaccessible fixture memory.");
+    std::cout << "PASS: bounded reader accepts owned bytes; rejects null, oversized and inaccessible reads.\n";
     std::wstring prefix = L"Local\\SRMM_fixture_" + std::to_wstring(GetCurrentProcessId()) + L"_" + std::to_wstring(GetTickCount64());
     Handle ready(CreateEventW(nullptr, TRUE, FALSE, (prefix + L"_ready").c_str()));
     Handle done(CreateEventW(nullptr, TRUE, FALSE, (prefix + L"_done").c_str()));
