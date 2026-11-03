@@ -3,6 +3,7 @@
 #include <dxgi.h>
 #include <wrl/client.h>
 #include <cstdint>
+#include <cstddef>
 
 // Borrowed swap-chain rendering. The caller must own the immediate-context
 // thread for the complete call; this object cannot synchronize a foreign app.
@@ -21,7 +22,9 @@ class SharedRenderer {
     Ptr<ID3D11RasterizerState> raster_;
     Ptr<ID3D11SamplerState> sampler_;
     Ptr<ID3D11ShaderResourceView> map_;
+    HRESULT initialize_texture(ID3D11Device*,const void*,UINT,UINT,DXGI_FORMAT,UINT) noexcept;
 public:
+    HRESULT initialize_dds(ID3D11Device* device,const void* bytes,std::size_t size) noexcept;
     HRESULT initialize(ID3D11Device* device,const std::uint32_t* rgba,UINT width,UINT height) noexcept;
     HRESULT draw(IDXGISwapChain* swap,const SrmmMapFrame& frame) noexcept;
     void reset() noexcept;

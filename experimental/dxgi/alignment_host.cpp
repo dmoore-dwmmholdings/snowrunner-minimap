@@ -1,8 +1,12 @@
 #define NOMINMAX
 #include "shared_renderer.h"
+#include "candidate_packet.h"
 #include <array>
 #include <cmath>
 #include <iostream>
+#include <fstream>
+#include <vector>
+#include "map_dds.h"
 #include <stdexcept>
 using Microsoft::WRL::ComPtr;
 namespace {
@@ -15,8 +19,8 @@ struct Window {
  ~Window(){if(value)DestroyWindow(value);UnregisterClassW(L"SrmmAlignmentHost",GetModuleHandleW(nullptr));}
 };
 }
-int main(int argc,char**) {
- if(argc!=1)return 2;
+int main(int argc,char** argv) {
+ if(argc!=1&&(argc!=3||std::strcmp(argv[1],"--local-map")))return 2;
  try {
   Window window;
   ComPtr<ID3D11Device> device;ComPtr<ID3D11DeviceContext> context;
@@ -49,9 +53,39 @@ int main(int argc,char**) {
   check(pixel(74,64)==0xffffffff&&pixel(64,54)!=0xffffffff,"East marker rotates clockwise independently of texture flip");
   frame.heading=0;frame.center_v=.25f;draw(frame);
   check(pixel(44,44)==blue&&pixel(44,84)==blue,"Pan center uses north-up UV before storage flip");
+  // Original 4x4 BC3 block: red RGB, intentionally irrelevant alpha.
+  std::array<std::uint8_t,144> dds{};
+  auto word=[&](unsigned offset,std::uint32_t value){for(unsigned i=0;i<4;++i)dds[offset+i]=static_cast<std::uint8_t>(value>>(i*8));};
+  std::memcpy(dds.data(),"DDS ",4);word(4,124);word(8,0x81007);word(12,4);word(16,4);word(20,16);word(28,1);word(76,32);word(80,4);word(84,0x35545844);word(108,0x1000);
+  dds[137]=0xf8;dds[139]=0xf8;
+  ok(renderer.initialize_dds(device.Get(),dds.data(),dds.size()),"Upload original bounded BC3 map");
+  frame=SrmmMapFrame{};draw(frame);check(pixel(44,44)==red&&pixel(84,84)==red,"BC3 map RGB reaches actual backbuffer independently of alpha");
+  // Complete diagnostic packet -> calibration -> native texture/render path, original data only.
+  std::array<std::uint8_t,256> packet{};std::memcpy(packet.data(),"SRMMTEL1",8);
+  auto p32=[&](unsigned offset,std::uint32_t value){for(unsigned i=0;i<4;++i)packet[offset+i]=static_cast<std::uint8_t>(value>>(i*8));};
+  p32(8,1);p32(12,256);p32(16,1);p32(20,42);p32(24,1);p32(32,1000);p32(40,99);std::memcpy(packet.data()+48,"level_test_01",13);
+  const double pose[]={100,0,200,1,0,0};std::memcpy(packet.data()+144,pose,sizeof(pose));
+  SrmmCalibration calibration;calibration.affine={.001,0,.25,0,-.001,.75};calibration.validated=true;calibration.texture_v_flipped=true;
+  SrmmCandidateGate gate(42,99,{},"level_test_01",calibration);
+  auto candidate=gate.consume(packet.data(),packet.size(),1000);
+  check(candidate.frame.has_value(),"Calibrated diagnostic packet produces frame");draw(*candidate.frame);
+  check(pixel(74,64)==0xffffffff&&pixel(64,54)==red,"Packet east heading renders over BC3 texture");
+  check(!gate.consume(packet.data(),packet.size(),1751).frame,"Expired diagnostic packet produces no render request");
+  check(renderer.initialize_dds(device.Get(),dds.data(),143)==E_INVALIDARG,"Malformed map rejected before GPU upload");
+  check(renderer.draw(swap.Get(),frame)==E_INVALIDARG,"Invalid replacement clears renderer rather than showing old map");
+  ok(renderer.initialize(device.Get(),map.data(),64,64),"Restore original texture for invalid frame checks");
   auto invalid=frame;invalid.heading=std::nanf("");check(renderer.draw(swap.Get(),invalid)==E_INVALIDARG,"Reject nonfinite heading");
   invalid=frame;invalid.left=100;check(renderer.draw(swap.Get(),invalid)==E_INVALIDARG,"Reject viewport beyond backbuffer");
+  if(argc==3) {
+    std::ifstream file(argv[2],std::ios::binary|std::ios::ate);check(bool(file),"Open explicit private map copy");
+    const auto length=file.tellg();check(length>=144&&length<=67108992,"Bound private map file size");
+    std::vector<std::uint8_t> local(static_cast<std::size_t>(length));file.seekg(0);file.read(reinterpret_cast<char*>(local.data()),static_cast<std::streamsize>(local.size()));check(bool(file),"Read private map copy");
+    const auto localView=srmm_parse_map_dds(local.data(),local.size());check(localView.has_value(),"Validate real local map DDS framing");
+    ok(renderer.initialize_dds(device.Get(),local.data(),local.size()),"Upload real local map into owned WARP renderer");
+    draw(SrmmMapFrame{});
+    std::cout<<"Local map accepted: "<<localView->width<<"x"<<localView->height<<"; owned rendering only, world calibration unverified.\n";
+  }
   buffer.Reset();readback.Reset();ok(swap->ResizeBuffers(1,160,160,DXGI_FORMAT_UNKNOWN,0),"No renderer backbuffer references survive draw");
-  renderer.reset();std::cout<<"PASS: "<<checks<<" actual pixel orientation/pan/heading checks; original owned data only.\n";return 0;
+  renderer.reset();std::cout<<"PASS: "<<checks<<(argc==3?" owned renderer checks with explicit local map; no game access.\n":" actual pixel orientation/pan/heading checks; original owned data only.\n");return 0;
  }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}
 }

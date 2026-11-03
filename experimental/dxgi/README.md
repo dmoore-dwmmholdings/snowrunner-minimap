@@ -88,3 +88,39 @@ Every factory method consults the retained system table afresh and delegates wit
 Factories, original system modules, registry and dispatch storage remain resident until process exit. Registration is idempotent and capped at 64 factory instances; extra factories remain untouched. The deliberate retained references avoid final-release/reclamation races. No hot-unload or factory-pointer restoration is attempted during play. This bounded retention and per-instance pointer mutation are material tradeoffs. Normal exit is required before removing the two added files. Every addition/removal must check expected hashes and refuse an existing unrecognized DLL.
 
 The owned tests do not establish live Steam overlay behavior, compatibility with other mods, or actual game render-thread scheduling. Both binaries are specific to the local Windows export layout and exact eligible game fingerprint. Game rendering remains disabled in this diagnostic build. A controlled live test must first establish creation/Present counters and normal shutdown while preserving Steam overlay and security settings.
+
+## Offline map and diagnostic telemetry integration
+
+`SharedRenderer::initialize_dds` now accepts the bounded single-mip BC3 DDS emitted by the local map importer. Header flags, dimensions, mip count, block byte count, reserved fields and exact file size are checked before GPU creation. The renderer ignores unvalidated alpha. Invalid replacement data clears the renderer so it cannot silently keep displaying the previous map. It performs no filesystem, game-memory or network access.
+
+`candidate_packet.*` consumes a fixed 256-byte little-endian diagnostic packet: magic/version/size, availability, PID, sequence, Windows `GetTickCount64` sample time, publisher session, canonical map identifier, executable digest, position and direction, then zero reserved bytes. It rejects malformed/nonfinite data, context/build/session mismatch, future or >750ms-old samples, older/rewritten sequences and clock rollback. Identical packets can redraw while fresh. Clock rollback poisons the gate until reconstruction. This binary feed is local data, not authentication or a trusted game API.
+
+Calibration explicitly supplies six affine coefficients from world X/Z to north-up U/V plus a measured UV-per-pixel scale. Direction passes through the same affine basis before clockwise heading is computed. Storage-V flip is independent. Missing calibration validation, a singular/nonfinite transform, out-of-map position or unusable direction hides output. The current scalar UV scale targets square-map views; general independent axis scaling is not implemented. There is **no default game calibration**. Setting `validated` requires measured evidence; a synthetic test setting it does not validate the installed map.
+
+The existing production `FrameController` still rejects native candidates. The new gate reports only `ready_diagnostic` and is linked to owned tests, not enabled game drawing. An owned host now exercises packet -> affine projection/heading -> BC3 texture -> actual hidden swap-chain pixels, including stale-frame suppression.
+
+`tools/candidate_feed.py` prepares an explicit read-only publisher for a later authorized test. It accepts a PID, prior complete discovery report, canonical map ID and new output directory. It verifies the executable fingerprint, reuses only unique bounded root RVAs, rechecks RTTI and both root chains, and performs no discovery scan. It publishes at most 10 Hz for 1..600 seconds through atomic replacement of a 256-byte local file. A fresh random session accompanies each run; shutdown writes unavailable. Sample time is taken before the reads. A killed publisher expires through the consumer's freshness limit. Do not run it while game access is paused.
+
+```powershell
+# Later authorized diagnostic session only; paths and PID must be supplied explicitly.
+python tools/candidate_feed.py --pid <PID> --layout <private-discovery.json> --map <level_id> --output-dir <new-private-directory> --seconds 30
+```
+
+The publisher's data is still a candidate. Stable roots do not make multi-field reads atomic and no gameplay/menu/garage/loading signal exists yet. Map changes are rejected by the consumer's explicit context. The session manifest and packet are private local files and must not be committed. Reading the packet and map on a background worker, connecting that worker to the actual game render route, deciding active HUD state, measuring calibration and validating movement/heading remain future integration work. No game is contacted by the unit tests or build.
+
+
+Packet layout (all integers/floats little-endian; total exactly 256 bytes):
+
+| Offset | Data |
+| --- | --- |
+| 0 | 8-byte `SRMMTEL1` magic |
+| 8 / 12 / 16 / 20 | uint32 version=1, size=256, availability=0/1, PID |
+| 24 / 32 / 40 | uint64 sequence, sample GetTickCount64, publisher session |
+| 48 | 64-byte ASCII canonical level name, NUL and zero padding |
+| 112 | 32 raw executable SHA-256 bytes |
+| 144 / 168 | Three float64 position XYZ / direction XYZ values |
+| 192 | 64 zero reserved bytes |
+
+Future Windows readers must allow delete sharing while briefly reading the atomically replaced packet file; they must reject any size other than 256 and never extrapolate from an expired packet. Opening the manifest/packet does not itself authorize drawing a native candidate. The Python-to-C++ CTest checks full-width session IDs and oversize rejection using original fixture data.
+
+For a later offline check of an explicitly supplied private texture copy, `srmm_alignment_host --local-map <map.dds>` reads a bounded file, validates it, and renders it in the hidden owned WARP host. It reads no game process and does not modify the installation. Texture upload success does not establish world calibration or live integration.

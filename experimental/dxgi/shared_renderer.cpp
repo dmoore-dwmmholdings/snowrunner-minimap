@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include "shared_renderer.h"
+#include "map_dds.h"
 #include <d3dcompiler.h>
 #include <cmath>
 #include <cstring>
@@ -36,8 +37,16 @@ void SharedRenderer::reset() noexcept {
  map_.Reset();sampler_.Reset();raster_.Reset();constants_.Reset();ps_.Reset();vs_.Reset();deferred_.Reset();device_.Reset();
 }
 HRESULT SharedRenderer::initialize(ID3D11Device* device,const std::uint32_t* rgba,UINT width,UINT height) noexcept {
+ return initialize_texture(device,rgba,width,height,DXGI_FORMAT_R8G8B8A8_UNORM,width*4);
+}
+HRESULT SharedRenderer::initialize_dds(ID3D11Device* device,const void* bytes,std::size_t size) noexcept {
+ const auto view=srmm_parse_map_dds(bytes,size);
+ if(!view){reset();return E_INVALIDARG;}
+ return initialize_texture(device,view->blocks,view->width,view->height,DXGI_FORMAT_BC3_UNORM,view->row_pitch);
+}
+HRESULT SharedRenderer::initialize_texture(ID3D11Device* device,const void* pixels,UINT width,UINT height,DXGI_FORMAT format,UINT pitch) noexcept {
  reset();
- if(!device||!rgba||!width||!height||width>8192||height>8192) return E_INVALIDARG;
+ if(!device||!pixels||!width||!height||width>8192||height>8192) return E_INVALIDARG;
  device_=device;
  HRESULT hr=device->CreateDeferredContext(0,&deferred_); if(FAILED(hr)) {reset();return hr;}
  ComPtr<ID3DBlob> vertex,pixel,errors;
@@ -51,8 +60,8 @@ HRESULT SharedRenderer::initialize(ID3D11Device* device,const std::uint32_t* rgb
  if(SUCCEEDED(hr)) hr=device->CreateRasterizerState(&raster,&raster_);
  D3D11_SAMPLER_DESC sampler{};sampler.Filter=D3D11_FILTER_MIN_MAG_MIP_LINEAR;sampler.AddressU=sampler.AddressV=sampler.AddressW=D3D11_TEXTURE_ADDRESS_BORDER;sampler.BorderColor[0]=.08f;sampler.BorderColor[1]=.08f;sampler.BorderColor[2]=.08f;sampler.BorderColor[3]=1;sampler.MaxLOD=D3D11_FLOAT32_MAX;
  if(SUCCEEDED(hr)) hr=device->CreateSamplerState(&sampler,&sampler_);
- D3D11_TEXTURE2D_DESC texture{};texture.Width=width;texture.Height=height;texture.MipLevels=texture.ArraySize=texture.SampleDesc.Count=1;texture.Format=DXGI_FORMAT_R8G8B8A8_UNORM;texture.Usage=D3D11_USAGE_IMMUTABLE;texture.BindFlags=D3D11_BIND_SHADER_RESOURCE;
- D3D11_SUBRESOURCE_DATA initial{rgba,width*4,0};ComPtr<ID3D11Texture2D> image;
+ D3D11_TEXTURE2D_DESC texture{};texture.Width=width;texture.Height=height;texture.MipLevels=texture.ArraySize=texture.SampleDesc.Count=1;texture.Format=format;texture.Usage=D3D11_USAGE_IMMUTABLE;texture.BindFlags=D3D11_BIND_SHADER_RESOURCE;
+ D3D11_SUBRESOURCE_DATA initial{pixels,pitch,0};ComPtr<ID3D11Texture2D> image;
  if(SUCCEEDED(hr)) hr=device->CreateTexture2D(&texture,&initial,&image);
  if(SUCCEEDED(hr)) hr=device->CreateShaderResourceView(image.Get(),nullptr,&map_);
  if(FAILED(hr)) reset(); return hr;
