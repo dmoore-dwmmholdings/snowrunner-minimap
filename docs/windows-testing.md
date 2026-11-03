@@ -20,6 +20,16 @@ Start-Process .\build\synthetic-preview.svg
 
 The expected console test output is a check count and CTest success. The preview contains four synthetic heading samples and must say “no game connection.” Record tool versions and commit SHA with results. Local builds only; the repository contains no Actions workflow.
 
+## Metadata collection before native work
+
+The following repository script is prepared but **not tested on Windows**. It reads the named executable's metadata/hash and writes an ignored local manifest in `build/`. It never launches or attaches to the game. Supply the actual storefront, version visible in the game and graphics/display mode; use `Unknown` where appropriate. It does not inspect or verify the binary architecture or actual graphics API. Do not change an execution policy or security settings to make it run.
+
+```powershell
+.\tools\Collect-GameIdentity.ps1 -GameExe 'C:\path\to\SnowRunner.exe' -Storefront Steam -DisplayedVersion 'copy actual version' -GraphicsApi Unknown -DisplayMode Unknown
+```
+
+Review the output locally; it excludes the absolute game path and user/account information. The manifest is a starting input to [native integration validation](native-integration.md), not a supported-build declaration. Installed terms/protection policy, intended test setting and explicit approval for a concrete native runtime test remain required. Merely collecting this file does not authorize loading a DLL or modifying the installation.
+
 ## Future game acceptance checklist (all pending)
 
 - Record exact game version/storefront, map, graphics API/mode, monitor layout, DPI and selected integration approach.

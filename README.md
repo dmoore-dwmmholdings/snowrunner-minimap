@@ -2,9 +2,9 @@
 
 An early Windows minimap mod project, developed on macOS for later Windows testing.
 
-**Current state:** research and portable geometry prototype. There is no live SnowRunner connection or working in-game mod yet. The integration decision is open; an external overlay has not been selected as a substitute.
+**Current state:** native in-game mod research, portable geometry and mock-driven adapter prototype. There is no live SnowRunner connection or working in-game mod yet. The requested in-game path is being pursued; Windows validation remains pending.
 
-[Live Andare board](https://andare.bottega-suite.com/w/RLdpCCh1YgoQVD5lYRoU/p/SNOW/board) · [Feasibility and sources](docs/feasibility.md) · [Windows handoff](docs/windows-testing.md)
+[Live Andare board](https://andare.bottega-suite.com/w/RLdpCCh1YgoQVD5lYRoU/p/SNOW/board) · [Feasibility](docs/feasibility.md) · [Native research and boundaries](docs/native-integration.md) · [Windows handoff](docs/windows-testing.md)
 
 ## Run locally
 
@@ -21,12 +21,15 @@ Open the SVG in a browser. It shows four heading-up replay samples on original s
 
 The core supports affine calibration from three landmarks, map-image projection, cardinal heading rotation, zoom, circular bounds and telemetry freshness classification. Its internal world convention is east/north and is explicitly **not** a verified SnowRunner coordinate convention. The future game adapter must convert and verify it.
 
+The demo runs through the same telemetry/frame contract used in the mock tests. Samples carry exact build identity and session/map/vehicle identifiers. Invalid, stale, mismatched or failed reads clear the marker; a native candidate is always rejected in the current prototype. No process-access or injection implementation is included. Current Mac checks: 27 geometry checks plus 48 adapter checks, 2/2 CTest cases passing.
+
 ## Plan
 
 1. SNOW-2: evidence-backed feasibility review.
 2. SNOW-3: shared geometry and synthetic replay prototype.
-3. SNOW-4: choose integration path and validate live pose on Windows.
-4. SNOW-5: user-local map import and measured alignment.
-5. SNOW-6: local Windows build, runtime validation and uninstall instructions.
+3. SNOW-7: mock-driven native telemetry and frame contracts.
+4. SNOW-4: validate native in-game integration and live pose on Windows.
+5. SNOW-5: user-local map import and measured alignment.
+6. SNOW-6: local Windows build, runtime validation and uninstall instructions.
 
 No paid CI workflows, game assets, credentials, executable downloads or mod-marketplace publication are included.

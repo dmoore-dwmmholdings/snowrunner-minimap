@@ -4,7 +4,7 @@
 
 A true live minimap cannot currently be promised through an official SnowRunner SDK. In the reviewed public Saber documentation, no supported HUD-rendering extension or live vehicle telemetry API was found. That is a bounded research result, not proof that no private or undocumented capability exists.
 
-An unofficial in-game route has community precedent, but it uses process integration outside the documented mod content system. Do not silently turn this project into an external companion. Product choice and Windows verification are still required.
+An unofficial in-game route has community precedent, but it uses process integration outside the documented mod content system. Follow-up direction confirms continued research into the requested in-game path. [Native research and boundaries](native-integration.md) records the source review and remaining Windows inputs. No external companion has been substituted.
 
 ## Evidence
 
@@ -21,7 +21,7 @@ Sources accessed 2026-11-03. Site-restricted searches for telemetry/API/HUD did 
 
 The current workspace was empty and had no inherited AGENTS.md in its parent chain. The default Steam library on this Mac contained no SnowRunner installation; other drives/libraries and the Windows machine have not been inspected. No SnowRunner game files, editor or save schema have been verified. CMake and Apple Clang are installed. No unknown software has been installed or executed.
 
-## Candidate paths — decision pending
+## Initially assessed alternatives — native path retained
 
 | Path | Display | Position and heading | Main unresolved evidence |
 | --- | --- | --- | --- |
@@ -30,11 +30,11 @@ The current workspace was empty and had no inherited AGENTS.md in its parent cha
 | Screen-derived companion | External window or second screen | Potential visual map-marker recognition when map UI is visible | No proof of continuous tracking with map closed; calibration/occlusion and capture behavior untested |
 | Manual or save-snapshot companion | External map with user selection/snapshots | Manual pose or potentially delayed save-derived pose | Save schema/cadence/heading unknown; cannot represent this as a live minimap |
 
-The portable geometry prototype is compatible with these options. No integration code has been chosen or installed. No anti-cheat compatibility or security exemption is claimed. Do not disable protection or request antivirus exclusions based on community assertions.
+The original option comparison is retained as research history. The active target remains an in-game mod. Mock-driven adapter code is implemented; native process integration has not been implemented or installed. No anti-cheat compatibility or security exemption is claimed.
 
 ## Next evidence gate
 
-1. Choose native research versus external overlay after reviewing this checkpoint.
+1. Continue the native path with original adapter contracts; inspect precedents read-only and establish licensing before any reuse.
 2. On Windows, record storefront, game version, executable build, graphics mode and screen/DPI configuration.
 3. Verify a position/heading source with timestamp, map identity and garage/transition handling on that exact build. Treat missing/stale data as unavailable, not interpolated truth.
 4. Import permitted user-local map imagery; measure at least three noncollinear calibration landmarks plus independent check points. Never assume one scale for all maps.

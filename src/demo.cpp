@@ -1,11 +1,23 @@
-#include "minimap.hpp"
+#include "telemetry.hpp"
 #include <cmath>
 #include <iomanip>
 #include <iostream>
 using namespace minimap;
+struct DemoSource : TelemetrySource {
+    std::optional<TelemetrySample> sample;
+    std::optional<TelemetrySample> poll() override {
+        auto result=sample;
+        sample.reset();
+        return result;
+    }
+};
 int main() {
     constexpr double pi=3.14159265358979323846;
     Calibration c{1,0,0,-1,250,250};
+    BuildIdentity fixture{"synthetic","demo-v1",std::string(64,'a'),"synthetic","SVG"};
+    MapContext context{{"demo-session","procedural-map","synthetic-truck"},c,220,1,true};
+    FrameController controller(fixture);
+    DemoSource source;
     std::cout<<std::fixed<<std::setprecision(2);
     std::cout<<"<svg xmlns='http://www.w3.org/2000/svg' width='1020' height='400' viewBox='0 0 1020 400'>"
              <<"<rect width='1020' height='400' fill='#121d20'/>"
@@ -13,7 +25,11 @@ int main() {
              <<"<text x='24' y='58' font-size='14'>SYNTHETIC DATA / no game connection / heading-up replay samples</text></g>";
     for(int frame=0;frame<4;++frame) {
         double h=frame*pi/2;
-        View view{c.project({0,0}),1,220,image_heading(c,h),true};
+        source.sample=TelemetrySample{SourceKind::synthetic,ReadState::active,fixture,context.key,
+                                      static_cast<std::uint64_t>(frame+1),frame*100.0,Pose{{0,0},h}};
+        auto packet=controller.update(source,context,frame*100.0);
+        if (!packet.geometry) return 1;
+        View view=packet.geometry->view;
         std::cout<<"<defs><clipPath id='clip"<<frame<<"'><circle cx='110' cy='110' r='110'/></clipPath></defs>"
                  <<"<g transform='translate("<<24+frame*250<<",90)'>"
                  <<"<circle cx='110' cy='110' r='111' fill='#354c40' stroke='#b6cfbc'/>"
