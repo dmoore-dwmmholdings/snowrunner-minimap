@@ -162,7 +162,7 @@ def main():
             while time.monotonic() < deadline:
                 tick = time.monotonic();sampled_tick = clock();name,pose = sample_fixed(reader,bases[0],size,roots)
                 write(name,pose,sampled_tick)
-                time.sleep(max(0,.1-(time.monotonic()-tick)))
+                time.sleep(max(0,.05-(time.monotonic()-tick)))
         finally:
             write(args.map,None)  # A stopped publisher never leaves an active packet behind.
         print('Diagnostic feed stopped; final packet unavailable. No gameplay/calibration validation is implied.')

@@ -97,3 +97,7 @@ target_compile_options(srmm_session_host PRIVATE /W4 /permissive-)
 target_link_libraries(srmm_session_host PRIVATE d3dcompiler bcrypt)
 add_test(NAME owned_session_config COMMAND srmm_session_host)
 set_tests_properties(owned_session_config PROPERTIES TIMEOUT 15)
+
+add_executable(srmm_navigation_host navigation_host.cpp)
+target_compile_features(srmm_navigation_host PRIVATE cxx_std_17)
+add_test(NAME owned_navigation_math COMMAND srmm_navigation_host)

@@ -2,6 +2,7 @@
 #include "candidate_packet.h"
 #include "file_ingestor.h"
 #include <thread>
+#include "navigation_math.h"
 enum class SrmmViewStatus { hidden,unavailable,wrong_generation,wrong_thread,graphics_error,ready_diagnostic };
 struct SrmmViewResult { SrmmViewStatus status;SrmmPacketStatus packet_status=SrmmPacketStatus::invalid;HRESULT graphics=S_OK; };
 // All methods/destruction belong to the render thread. No files, waits or worker mutation here.
@@ -12,6 +13,7 @@ class SrmmDiagnosticView {
     SrmmCandidateGate gate_;
     float left_,top_,size_,zoom_=1;
     int tracking_=0;bool square_=false,have_motion_=false;
+    SrmmBearingFilter rotation_;
     float motion_=0,last_u_=0,last_v_=0;std::uint64_t motion_tick_=0;
     SharedRenderer renderer_;
     std::shared_ptr<const SrmmMapAsset> asset_;

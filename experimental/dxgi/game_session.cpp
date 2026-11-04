@@ -89,15 +89,16 @@ unsigned long __stdcall SrmmGameLayer::worker(void* opaque) noexcept {
     std::unique_ptr<std::shared_ptr<State>> holder(static_cast<std::shared_ptr<State>*>(opaque));auto state=*holder;holder.reset();
     try {
         SrmmSessionConfig config;if(!read_config(config)){srmm_probe_log("session-config-unavailable");return 0;}
-        SrmmFileIngestor ingest(config.files);if(!ingest.start()){srmm_probe_log("session-start-refused");return 0;}
+        config.files.poll_ms=20;SrmmFileIngestor ingest(config.files);if(!ingest.start()){srmm_probe_log("session-start-refused");return 0;}
         srmm_probe_log("session-started",config.calibration.validated?1:0);
+        std::uint64_t next_settings=0;
         while(WaitForSingleObject(state->stop,0)!=WAIT_OBJECT_0) {
             SrmmSessionConfig updated;
             // Reload display preferences only. Identity/assets/calibration stay fixed for the session.
-            if(read_config(updated)&&updated.session==config.session&&updated.map==config.map){config.left=updated.left;config.top=updated.top;config.size=updated.size;config.zoom=updated.zoom;config.tracking=updated.tracking;config.square=updated.square;}
+            if(GetTickCount64()>=next_settings&&read_config(updated)&&updated.session==config.session&&updated.map==config.map){next_settings=GetTickCount64()+500;config.left=updated.left;config.top=updated.top;config.size=updated.size;config.zoom=updated.zoom;config.tracking=updated.tracking;config.square=updated.square;}
             auto frame=std::make_shared<State::Frame>();frame->config=config;frame->snapshot=ingest.snapshot();
             std::atomic_store_explicit(&state->frame,std::shared_ptr<const State::Frame>(frame),std::memory_order_release);
-            if(WaitForSingleObject(state->stop,100)==WAIT_OBJECT_0)break;
+            if(WaitForSingleObject(state->stop,20)==WAIT_OBJECT_0)break;
         }
         ingest.request_stop();state->admitted.store(false,std::memory_order_release);
         srmm_probe_log(ingest.wait_for_stop(1000)?"session-stopped":"session-stop-pending");

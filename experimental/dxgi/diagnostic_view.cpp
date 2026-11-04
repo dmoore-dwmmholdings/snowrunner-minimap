@@ -8,11 +8,11 @@ SrmmDiagnosticView::SrmmDiagnosticView(std::uint64_t generation,std::array<std::
 void SrmmDiagnosticView::clear() noexcept {renderer_.reset();asset_.reset();device_.Reset();}
 SrmmViewResult SrmmDiagnosticView::draw(IDXGISwapChain* swap,const std::shared_ptr<const SrmmIngestSnapshot>& snapshot,std::uint64_t now,bool hud_allowed) noexcept {
     if(std::this_thread::get_id()!=owner_)return {SrmmViewStatus::wrong_thread};
-    if(!hud_allowed){clear();return {SrmmViewStatus::hidden};}
+    if(!hud_allowed){rotation_.reset();clear();return {SrmmViewStatus::hidden};}
     if(!snapshot||snapshot->generation!=generation_){clear();return {SrmmViewStatus::wrong_generation};}
     if(!snapshot->admission||!snapshot->admission->load(std::memory_order_acquire)||snapshot->status!=SrmmIngestStatus::ready||!snapshot->asset||snapshot->asset->sha256!=asset_hash_){clear();return {SrmmViewStatus::unavailable};}
     const auto frame=gate_.consume(snapshot->packet.data(),snapshot->packet.size(),now);
-    if(!frame.frame){have_motion_=false;clear();return {SrmmViewStatus::unavailable,frame.status};}
+    if(!frame.frame){have_motion_=false;rotation_.reset();clear();return {SrmmViewStatus::unavailable,frame.status};}
     if(!swap){clear();return {SrmmViewStatus::graphics_error,frame.status,E_INVALIDARG};}
     ComPtr<ID3D11Device> device;auto hr=swap->GetDevice(IID_PPV_ARGS(&device));
     if(SUCCEEDED(hr)&&(asset_.get()!=snapshot->asset.get()||device_.Get()!=device.Get())) {
@@ -22,10 +22,10 @@ SrmmViewResult SrmmDiagnosticView::draw(IDXGISwapChain* swap,const std::shared_p
     if(SUCCEEDED(hr)){auto placement=*frame.frame;placement.left=left_;placement.top=top_;placement.size=size_;placement.square=square_;placement.uv_per_pixel/=zoom_;
         const float du=placement.center_u-last_u_,dv=placement.center_v-last_v_;
         if(!have_motion_||now-motion_tick_>2000){motion_=placement.heading;last_u_=placement.center_u;last_v_=placement.center_v;have_motion_=true;motion_tick_=now;}
-        else if(std::hypot(du,dv)>.00025f){motion_=std::atan2(du,-dv);last_u_=placement.center_u;last_v_=placement.center_v;motion_tick_=now;}
+        else if(std::hypot(du,dv)>.00001f){motion_=std::atan2(du,-dv);last_u_=placement.center_u;last_v_=placement.center_v;motion_tick_=now;}
         // Hold the last travel direction when stationary; reset only on missing feed.
         else motion_tick_=now;
-        placement.map_rotation=tracking_==2?motion_:tracking_==1?placement.heading:0;
+        placement.map_rotation=rotation_.step(tracking_==2?motion_:tracking_==1?placement.heading:0,now);
         placement.heading-=placement.map_rotation;
         hr=renderer_.draw(swap,placement);}
     if(FAILED(hr)){clear();return {SrmmViewStatus::graphics_error,frame.status,hr};}
