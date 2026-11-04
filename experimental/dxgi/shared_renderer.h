@@ -4,13 +4,18 @@
 #include <wrl/client.h>
 #include <cstdint>
 #include <cstddef>
+#include <array>
 
 // Borrowed swap-chain rendering. The caller must own the immediate-context
 // thread for the complete call; this object cannot synchronize a foreign app.
+struct SrmmSavedDestinationMarker {float x{},y{},bearing{};bool edge=false;std::uint32_t kind=1;};
 struct SrmmMapFrame {
     float left=16, top=16, size=96;
     float center_u=.5f, center_v=.5f, uv_per_pixel=.004f, heading=0;
     float map_rotation=0;
+    float uv_per_pixel_v=0; // Zero preserves square-map compatibility.
+    std::uint32_t destination_count=0;
+    std::array<SrmmSavedDestinationMarker,16> destinations{};
     bool square=false;
     bool alignment_preview=false;
     bool texture_v_flipped=false; // Center remains north-up; only texture storage changes.

@@ -1,7 +1,7 @@
 """Bounded local map discovery. No extraction, downloads or game writes.
 
 Discovery establishes asset names only. Unknown calibration must never inherit
-another map's calibration. Runtime native switching is not connected yet.
+another map's calibration. Use import_map_registry to join assets with independently checked scene geometry.
 """
 import argparse,json,re,zipfile
 from pathlib import Path

@@ -56,6 +56,20 @@ int main(int argc,char** argv) {
   frame.map_rotation=0;frame.square=true;draw(frame);check(pixel(20,20)==red,"Square includes corner outside circle");
   frame.square=false;frame.texture_v_flipped=true;frame.heading=0;frame.center_v=.25f;draw(frame);
   check(pixel(44,44)==blue&&pixel(44,84)==blue,"Pan center uses north-up UV before storage flip");
+  // Actual saved-waypoint glyph pixels, independent of copied game data.
+  auto amber=[](std::uint32_t p){return (p&255)>240&&((p>>8)&255)>150&&((p>>8)&255)<200&&((p>>16)&255)<70;};
+  frame=SrmmMapFrame{};frame.destination_count=1;frame.destinations[0]={24,0,0,false};draw(frame);
+  check(amber(pixel(94,64)),"Saved waypoint has an amber outlined diamond");
+  check(!amber(pixel(88,64)),"Saved diamond remains hollow");
+  frame.destinations[0].kind=2;draw(frame);check(amber(pixel(88,64)),"Saved objective has a filled amber diamond");
+  frame.destinations[0]={36,0,1.57079632679f,true};draw(frame);
+  check(amber(pixel(102,64))&&!amber(pixel(100,58)),"East edge arrow points toward off-map destination");
+  frame.destinations[0]={0,-36,0,true};draw(frame);
+  check(amber(pixel(64,26)),"Rotated north edge arrow points upward");
+  frame.destination_count=0;frame.center_u=.41f;frame.center_v=.37f;frame.uv_per_pixel=.004f;frame.uv_per_pixel_v=.008f;frame.map_rotation=1.57079632679f;draw(frame);
+  check(pixel(88,32)==yellow,"Rectangular texture scale applies after rotation");
+  auto invalidDestination=frame;invalidDestination.destination_count=17;check(renderer.draw(swap.Get(),invalidDestination)==E_INVALIDARG,"Destination bound validated before shader");
+  invalidDestination=frame;invalidDestination.destination_count=1;invalidDestination.destinations[0].x=NAN;check(renderer.draw(swap.Get(),invalidDestination)==E_INVALIDARG,"Nonfinite destination rejected");
   // Original 4x4 BC3 block: red RGB, intentionally irrelevant alpha.
   std::array<std::uint8_t,144> dds{};
   auto word=[&](unsigned offset,std::uint32_t value){for(unsigned i=0;i<4;++i)dds[offset+i]=static_cast<std::uint8_t>(value>>(i*8));};

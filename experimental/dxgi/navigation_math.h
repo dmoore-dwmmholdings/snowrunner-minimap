@@ -19,10 +19,13 @@ public:
 };
 struct SrmmDestinationProjection {float x,y,bearing;bool edge;};
 // Pure projection only: callers must first validate source identity/freshness.
-inline std::optional<SrmmDestinationProjection> srmm_project_destination(float du,float dv,float scale,float rotation,float size,bool square,float padding=12) noexcept {
+inline std::optional<SrmmDestinationProjection> srmm_project_destination(float du,float dv,float scale,float rotation,float size,bool square,float padding=12,float scale_v=0) noexcept {
+    if(scale_v==0)scale_v=scale;
+    if(!std::isfinite(scale_v)||scale_v<=0)return {};
     if(!std::isfinite(du)||!std::isfinite(dv)||!std::isfinite(scale)||!std::isfinite(rotation)||!std::isfinite(size)||!std::isfinite(padding)||scale<=0||size<32||padding<0||padding>=size/2)return {};
     const float c=std::cos(rotation),s=std::sin(rotation);
-    float x=(c*du+s*dv)/scale,y=(-s*du+c*dv)/scale;
+    const float px=du/scale,py=dv/scale_v;
+    float x=c*px+s*py,y=-s*px+c*py;
     if(!std::isfinite(x)||!std::isfinite(y))return {};
     const float extent=square?(std::max)(std::abs(x),std::abs(y)):std::hypot(x,y);
     const float limit=size/2-padding;const bool edge=extent>limit;

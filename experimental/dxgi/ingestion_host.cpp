@@ -18,17 +18,18 @@ void p32(std::uint8_t* p,std::uint32_t v){for(unsigned i=0;i<4;++i)p[i]=static_c
 void p64(std::uint8_t* p,std::uint64_t v){for(unsigned i=0;i<8;++i)p[i]=static_cast<std::uint8_t>(v>>(i*8));}
 auto map_fixture(){std::array<std::uint8_t,144> d{};std::memcpy(d.data(),"DDS ",4);p32(d.data()+4,124);p32(d.data()+8,0x81007);p32(d.data()+12,4);p32(d.data()+16,4);p32(d.data()+20,16);p32(d.data()+28,1);p32(d.data()+76,32);p32(d.data()+80,4);p32(d.data()+84,0x35545844);p32(d.data()+108,0x1000);d[137]=d[139]=0xf8;return d;}
 auto packet(std::uint64_t sequence){std::array<std::uint8_t,256> p{};std::memcpy(p.data(),"SRMMTEL1",8);p32(p.data()+8,1);p32(p.data()+12,256);p32(p.data()+16,1);p32(p.data()+20,42);p64(p.data()+24,sequence);p64(p.data()+32,GetTickCount64());p64(p.data()+40,99);std::memcpy(p.data()+48,"level_test_01",13);const double pose[]={100,0,200,1,0,0};std::memcpy(p.data()+144,pose,sizeof(pose));return p;}
+auto destinations(std::uint64_t sequence){std::array<std::uint8_t,SrmmDestinationPacketSize> d{};std::memcpy(d.data(),"SRMMDST1",8);p32(d.data()+8,1);p32(d.data()+12,static_cast<std::uint32_t>(d.size()));p32(d.data()+16,1);p32(d.data()+20,42);p64(d.data()+24,sequence);p64(d.data()+32,GetTickCount64());p64(d.data()+40,99);std::memcpy(d.data()+48,"level_test_01",13);p64(d.data()+144,1700000000000ULL);p32(d.data()+152,1);p32(d.data()+156,1);p32(d.data()+160,1);p32(d.data()+164,1);const double position[]={124,200};std::memcpy(d.data()+168,position,sizeof(position));return d;}
 struct Files {
-    std::filesystem::path root,map,packet_path,next;
+    std::filesystem::path root,map,packet_path,destination_path,next;
     Files(){wchar_t temporary[32768]{};check(GetTempPathW(32768,temporary)>0,"Find own fixture temp directory");
         root=std::filesystem::path(temporary)/(L"srmm-handoff-"+std::to_wstring(GetCurrentProcessId())+L"-"+std::to_wstring(GetTickCount64()));
-        check(CreateDirectoryW(root.c_str(),nullptr)!=FALSE,"Create exclusive owned fixture directory");map=root/L"map.dds";packet_path=root/L"candidate.bin";next=root/L"next.tmp";}
+        check(CreateDirectoryW(root.c_str(),nullptr)!=FALSE,"Create exclusive owned fixture directory");map=root/L"map.dds";packet_path=root/L"candidate.bin";destination_path=root/L"destinations.bin";next=root/L"next.tmp";}
     void replace(const std::filesystem::path& destination,const void* bytes,std::size_t size){
         HANDLE file=CreateFileW(next.c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);check(file!=INVALID_HANDLE_VALUE,"Create new atomic fixture payload");
         DWORD written{};const bool saved=WriteFile(file,bytes,static_cast<DWORD>(size),&written,nullptr)&&written==size;CloseHandle(file);check(saved,"Write complete original fixture");
         check(MoveFileExW(next.c_str(),destination.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)!=FALSE,"Atomically replace fixture while reader is active");
     }
-    ~Files(){DeleteFileW(map.c_str());DeleteFileW(packet_path.c_str());DeleteFileW(next.c_str());RemoveDirectoryW(root.c_str());}
+    ~Files(){DeleteFileW(map.c_str());DeleteFileW(packet_path.c_str());DeleteFileW(destination_path.c_str());DeleteFileW(next.c_str());RemoveDirectoryW(root.c_str());}
 };
 template<class Predicate> auto await_snapshot(SrmmFileIngestor& source,Predicate predicate){
     const auto deadline=GetTickCount64()+3000;
@@ -45,7 +46,7 @@ struct Window {
 }
 int main(int argc,char**){if(argc!=1)return 2;try {
     Files files;auto dds=map_fixture();files.replace(files.map,dds.data(),dds.size());
-    SrmmIngestConfig config;config.map_path=files.map;config.packet_path=files.packet_path;config.poll_ms=20;
+    SrmmIngestConfig config;config.map_path=files.map;config.packet_path=files.packet_path;config.destination_path=files.destination_path;config.poll_ms=20;
     check(srmm_sha256(dds.data(),dds.size(),config.map_sha256),"Hash original map fixture");
     SrmmFileIngestor source(config);check(source.snapshot()->status==SrmmIngestStatus::starting,"Initial state has no packet");
     check(source.start(),"Start explicit background ingestion");check(!source.start(),"Refuse duplicate worker start");
@@ -53,6 +54,7 @@ int main(int argc,char**){if(argc!=1)return 2;try {
     auto p=packet(1);files.replace(files.packet_path,p.data(),p.size());auto first=ready(source,1);
     check(!source.wait_for_stop(0),"Active worker reports Pending without waiting or discarding state");
     check(first->asset&&first->asset->dds.size()==144&&first->asset->sha256==config.map_sha256,"Publish immutable hash-bound map and complete packet together");
+    check(!first->have_destinations,"Missing optional destination file preserves ready truck packet");
     auto held=first;auto bad=p;bad[192]=1;files.replace(files.packet_path,bad.data(),bad.size());
     auto malformed=status(source,SrmmIngestStatus::invalid_packet);check(!malformed->asset,"Malformed packet publishes unavailable snapshot");
     std::array<std::uint8_t,257> oversized{};std::copy(p.begin(),p.end(),oversized.begin());
@@ -74,6 +76,26 @@ int main(int argc,char**){if(argc!=1)return 2;try {
     ok(device->CreateTexture2D(&texture,nullptr,&readback),"Create fixture pixel readback");context->CopyResource(readback.Get(),buffer.Get());D3D11_MAPPED_SUBRESOURCE mapped{};ok(context->Map(readback.Get(),0,D3D11_MAP_READ,0,&mapped),"Read handoff output");
     auto pixel=[&](unsigned x,unsigned y){return reinterpret_cast<const std::uint32_t*>(static_cast<const char*>(mapped.pData)+y*mapped.RowPitch)[x];};
     const bool correct=pixel(74,64)==0xffffffff&&pixel(44,44)==0xff0000ff;context->Unmap(readback.Get(),0);check(correct,"Atomic packet and BC3 asset produce east marker and map pixels");
+    auto dest=destinations(1);files.replace(files.destination_path,dest.data(),dest.size());
+    auto withDest=await_snapshot(source,[&](const auto& s){return s.status==SrmmIngestStatus::ready&&s.have_destinations&&s.destinations[24]==1;});
+    check(view.draw(swap.Get(),withDest,GetTickCount64(),false).status==SrmmViewStatus::hidden&&view.saved_modified_ms()==1700000000000ULL,"Saved source status updates while HUD is suppressed");
+    check(view.draw(swap.Get(),withDest,GetTickCount64(),true).status==SrmmViewStatus::ready_diagnostic&&view.saved_destination_count()==1,"Destination sidecar reaches render thread independently");
+    context->CopyResource(readback.Get(),buffer.Get());ok(context->Map(readback.Get(),0,D3D11_MAP_READ,0,&mapped),"Read destination handoff pixels");
+    const auto amber=pixel(94,64);context->Unmap(readback.Get(),0);check((amber&255)>240&&((amber>>8)&255)>150&&((amber>>8)&255)<200&&((amber>>16)&255)<70,"Worker destination projects to actual amber backbuffer marker");
+    auto malformedDest=dest;malformedDest[200]=1;files.replace(files.destination_path,malformedDest.data(),malformedDest.size());
+    auto withoutDest=await_snapshot(source,[&](const auto& s){return s.revision>withDest->revision&&s.status==SrmmIngestStatus::ready&&!s.have_destinations;});
+    check(view.draw(swap.Get(),withoutDest,GetTickCount64(),true).status==SrmmViewStatus::ready_diagnostic&&!view.saved_modified_ms()&&view.saved_destination_count()==0,"Malformed destinations clear markers without hiding map");
+    dest=destinations(2);files.replace(files.destination_path,dest.data(),dest.size());
+    withDest=await_snapshot(source,[&](const auto& s){return s.status==SrmmIngestStatus::ready&&s.have_destinations&&s.destinations[24]==2;});
+    check(view.draw(swap.Get(),withDest,GetTickCount64(),true).status==SrmmViewStatus::ready_diagnostic&&view.saved_destination_count()==1,"Destination source recovers after malformed data");
+    auto foreign=destinations(3);foreign[54]='b';files.replace(files.destination_path,foreign.data(),foreign.size());
+    auto wrongDest=await_snapshot(source,[&](const auto& s){return s.status==SrmmIngestStatus::ready&&s.have_destinations&&s.destinations[24]==3;});
+    check(view.draw(swap.Get(),wrongDest,GetTickCount64(),true).status==SrmmViewStatus::ready_diagnostic&&view.saved_destination_status()==SrmmDestinationStatus::wrong_context,"Foreign destination map hidden independently of truck");
+    SrmmDiagnosticView staleDestView(source.generation(),config.map_sha256,42,99,{},"level_test_01",calibration);
+    check(staleDestView.draw(nullptr,withDest,GetTickCount64()+1600,false).status==SrmmViewStatus::hidden&&!staleDestView.saved_modified_ms(),"Expired destination status unavailable even in hidden HUD");
+    check(DeleteFileW(files.destination_path.c_str())!=FALSE,"Remove own destination fixture");
+    withoutDest=await_snapshot(source,[&](const auto& s){return s.revision>wrongDest->revision&&s.status==SrmmIngestStatus::ready&&!s.have_destinations;});
+    check(view.draw(swap.Get(),withoutDest,GetTickCount64(),true).status==SrmmViewStatus::ready_diagnostic&&!view.saved_modified_ms(),"Deleted sidecar preserves live map and removes saved status");
     buffer.Reset();readback.Reset();ok(swap->ResizeBuffers(1,160,160,DXGI_FORMAT_UNKNOWN,0),"No handoff backbuffer references survive draw");
     SrmmViewResult otherThread{};std::thread other([&]{otherThread=view.draw(nullptr,current,GetTickCount64(),true);});other.join();check(otherThread.status==SrmmViewStatus::wrong_thread,"Wrong-thread drawing refuses before graphics calls");
     check(view.draw(swap.Get(),malformed,GetTickCount64(),true).status==SrmmViewStatus::unavailable,"Input error clears render resources");
@@ -102,6 +124,7 @@ int main(int argc,char**){if(argc!=1)return 2;try {
     check(srmm_sha256(broken.data(),broken.size(),corrupt.map_sha256),"Hash malformed original texture fixture");
     SrmmFileIngestor malformedMap(corrupt);check(malformedMap.start(),"Start malformed map test");check(!status(malformedMap,SrmmIngestStatus::asset_error)->asset,"Correct hash cannot override malformed DDS rejection");check(malformedMap.wait_for_stop(2000),"Malformed map worker exits");
     auto invalid=config;invalid.map_path=L"relative.dds";SrmmFileIngestor relative(invalid);check(!relative.start(),"Reject relative file path");
+    invalid=config;invalid.destination_path=L"relative.bin";SrmmFileIngestor badDestinationPath(invalid);check(!badDestinationPath.start(),"Reject relative optional destination path");
     SrmmFileIngestor cancelled(config);cancelled.request_stop();check(!cancelled.start(),"Pre-start cancellation remains stopped");
     std::cout<<"PASS: "<<checks<<" background ingestion, immutable handoff, pixels and lifecycle checks; owned local fixtures only.\n";return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

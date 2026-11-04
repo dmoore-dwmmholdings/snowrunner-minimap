@@ -17,5 +17,8 @@ int main(){try{
  p=srmm_project_destination(1,0,.001f,1.57079632679f,200,false);check(p&&std::abs(p->x)<.001&&p->y< -87,"rotation shared with map");
  p=srmm_project_destination(0,0,.001f,0,200,false);check(p&&!p->edge&&p->x==0&&p->y==0,"coincident destination");
  check(!srmm_project_destination(NAN,0,.001f,0,200,false),"nonfinite rejection");
+ p=srmm_project_destination(.02f,.02f,.001f,1.57079632679f,200,false,12,.002f);
+ check(p&&!p->edge&&std::abs(p->x-10)<.001f&&std::abs(p->y+20)<.001f,"rectangular map projects in world pixels before rotation");
+ check(!srmm_project_destination(0,0,.001f,0,200,false,12,-.001f),"invalid vertical scale rejected");
  std::cout<<"PASS bearing interpolation and destination projection\n";return 0;
  }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

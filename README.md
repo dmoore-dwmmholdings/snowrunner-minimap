@@ -1,12 +1,32 @@
 # SnowRunner Minimap
 
-An early Windows minimap mod project, developed on macOS for later Windows testing.
+An experimental native Windows minimap, developed and tested locally. An earlier
+build rendered the real map and truck position in SnowRunner; the user confirmed
+the heading and smoothing updates during test drives. Full game-state and
+transition acceptance is still incomplete.
 
-**Current state:** original Windows launcher and bounded read-only pose probe, plus the isolated diagnostic DLL/host and [offscreen Direct3D renderer](docs/mock-renderer.md). Debug and Release pass 7/7 CTest cases, including 56 rendered-pixel/lifecycle checks and 66 [owned hook-lifecycle assertions](docs/hook-lifecycle-fixture.md); the earlier 32 Python tests pass. A real parked Scout produces consistent pose candidates and a matching map ID, but heading/movement are unverified. The native load attempt stopped at a loader compatibility guard before modifying the process. There is no working in-game minimap yet. See the [live validation checkpoint](docs/live-validation.md). The [native loading decision](docs/loading-decision.md) records the unresolved compatibility contract and the evidence needed to resume; further injection attempts are paused. See the [community loader review and renderer lifecycle update](docs/community-loader-review.md). The [proposed compatibility design](docs/compatibility-design.md) defines process-lifetime ownership, callback shutdown and the remaining host-interface boundary.
+The latest combined implementation adds a game-bound feed launcher, automatic
+local map discovery/import, map-generation switching with rectangular-map
+geometry, saved-destination edge markers, and an in-game F10 display panel with
+persistent zoom/tracking/shape/size/location settings. See the
+[combined checkpoint and coordinated test plan](docs/combined-checkpoint.md).
 
-**New experimental path:** the [original DXGI startup bridge](experimental/dxgi/README.md) now implements COM ownership and shared-backbuffer rendering without detours or import/vtable patches. Its three owned-host tests pass in Debug and Release, including the separately compiled bootstrap probe and rendered-pixel orientation checks. The optional game probe is not deployed and does not draw in the game. A local map importer adds four passing parser tests. No live in-game minimap is claimed; controlled startup, Steam overlay coexistence, movement, heading, calibration and gameplay-state detection remain outstanding.
+**Limits:** this combined build has not been installed or live-tested. Automatic
+menu detection still lacks a verified runtime source. Destinations are saved
+snapshots, not live mission events; cross-map gateway routing is not implemented.
+Imported map calibration stays visibly provisional until landmark checks pass.
+No game assets, private recordings, credentials or third-party binaries are
+published. No paid CI workflows are used.
 
-[Live Andare board](https://andare.bottega-suite.com/w/RLdpCCh1YgoQVD5lYRoU/p/SNOW/board) · [Feasibility](docs/feasibility.md) · [Native research and boundaries](docs/native-integration.md) · [Windows handoff](docs/windows-testing.md)
+The current Windows implementation lives in [experimental/dxgi](experimental/dxgi/README.md).
+Earlier research/loading documents record historical boundaries; they do not
+describe the current feature set. The separate portable core remains a synthetic
+geometry/adapter testbed.
+
+[Andare board](https://andare.bottega-suite.com/w/RLdpCCh1YgoQVD5lYRoU/p/SNOW/board) |
+[Local feed launcher](docs/feed-lifecycle.md) |
+[Map import](docs/map-import.md) |
+[Native settings](docs/native-display-panel.md)
 
 ## Run locally
 

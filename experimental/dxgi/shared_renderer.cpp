@@ -7,7 +7,7 @@
 using Microsoft::WRL::ComPtr;
 namespace {
 constexpr char shader[]=R"(
-cbuffer Frame:register(b0) { float4 viewport; float4 mapView; float4 marker; float4 options; };
+cbuffer Frame:register(b0) { float4 viewport; float4 mapView; float4 marker; float4 options; float4 destinations[16]; };
 Texture2D mapImage:register(t0); SamplerState mapSampler:register(s0);
 float4 vertex(uint id:SV_VertexID):SV_POSITION {
  float2 p=id==0?float2(-1,-1):(id==1?float2(-1,3):float2(3,-1)); return float4(p,0,1);
@@ -16,20 +16,37 @@ float4 pixel(float4 p:SV_POSITION):SV_TARGET {
  float2 d=p.xy-viewport.xy-viewport.z*.5;
  float r=options.z>0?max(abs(d.x),abs(d.y)):length(d); if(r>viewport.z*.5) discard;
  float2 rotated=float2(options.x*d.x-options.y*d.y,options.y*d.x+options.x*d.y);
- float2 uv=mapView.xy+rotated*mapView.z;
+ float2 uv=mapView.xy+rotated*float2(mapView.z,viewport.w);
  if(mapView.w<0) uv.y=1-uv.y;
  float3 color=mapImage.Sample(mapSampler,uv).rgb;
  if(r>viewport.z*.5-2) color=marker.z>0?float3(1,.1,.8):float3(.75,.83,.85);
+ // Amber identifies saved waypoints, not live objectives. Points are already
+ // projected with the same world rotation and anisotropic map scale as the image.
+ [loop] for(uint i=0;i<(uint)options.w;++i) {
+  float4 dst=destinations[i];float2 q=d-dst.xy;
+  if(dst.w<0) {
+   float c=cos(dst.z),s=sin(dst.z);
+   float2 a=float2(c*q.x+s*q.y,-s*q.x+c*q.y);
+   if(a.y>=-8 && a.y<=6 && abs(a.x)<.65*(a.y+8)) color=float3(.08,.06,.02);
+   if(a.y>=-6 && a.y<=4 && abs(a.x)<.55*(a.y+6)) color=float3(1,.7,.15);
+  } else {
+   float diamond=abs(q.x)+abs(q.y);
+   if(diamond>=3 && diamond<=9) color=float3(.08,.06,.02);
+   if((dst.w>1 && diamond<=7.5)||(diamond>=4.5 && diamond<=7.5)) color=float3(1,.7,.15);
+  }
+ }
  float2 m=float2(marker.x*d.x+marker.y*d.y,-marker.y*d.x+marker.x*d.y);
  if(m.y>=-12 && m.y<=8 && abs(m.x)<.4*(m.y+12)) color=1;
  return float4(color,1);
 }
 )";
-struct Constants { float viewport[4],map[4],marker[4],options[4]; };
+struct Constants { float viewport[4],map[4],marker[4],options[4],destinations[16][4]; };
 bool valid(const SrmmMapFrame& f) {
+ if(f.destination_count>16)return false;
+ for(unsigned i=0;i<f.destination_count;++i){const auto& p=f.destinations[i];if((p.kind!=1&&p.kind!=2)||!std::isfinite(p.x)||!std::isfinite(p.y)||!std::isfinite(p.bearing)||std::abs(p.x)>f.size/2||std::abs(p.y)>f.size/2)return false;}
  return std::isfinite(f.left)&&std::isfinite(f.top)&&std::isfinite(f.size)&&
   std::isfinite(f.center_u)&&std::isfinite(f.center_v)&&std::isfinite(f.uv_per_pixel)&&std::isfinite(f.heading)&&std::isfinite(f.map_rotation)&&
-  f.left>=0&&f.top>=0&&f.size>=32&&f.size<=2048&&f.uv_per_pixel>0&&f.uv_per_pixel<=1;
+  std::isfinite(f.uv_per_pixel_v)&&f.uv_per_pixel_v>=0&&f.uv_per_pixel_v<=1&&f.left>=0&&f.top>=0&&f.size>=32&&f.size<=2048&&f.uv_per_pixel>0&&f.uv_per_pixel<=1;
 }
 }
 void SharedRenderer::reset() noexcept {
@@ -75,7 +92,8 @@ HRESULT SharedRenderer::draw(IDXGISwapChain* swap,const SrmmMapFrame& f) noexcep
  D3D11_TEXTURE2D_DESC desc{};buffer->GetDesc(&desc);
  if(f.left+f.size>desc.Width||f.top+f.size>desc.Height||desc.SampleDesc.Count!=1)return E_INVALIDARG;
  ComPtr<ID3D11RenderTargetView> target;hr=device_->CreateRenderTargetView(buffer.Get(),nullptr,&target);if(FAILED(hr))return hr;
- const Constants values{{f.left,f.top,f.size,0},{f.center_u,f.center_v,f.uv_per_pixel,f.texture_v_flipped?-1.f:1.f},{std::cos(f.heading),std::sin(f.heading),f.alignment_preview?1.f:0.f,0},{std::cos(f.map_rotation),std::sin(f.map_rotation),f.square?1.f:0.f,0}};
+ Constants values{{f.left,f.top,f.size,f.uv_per_pixel_v>0?f.uv_per_pixel_v:f.uv_per_pixel},{f.center_u,f.center_v,f.uv_per_pixel,f.texture_v_flipped?-1.f:1.f},{std::cos(f.heading),std::sin(f.heading),f.alignment_preview?1.f:0.f,0},{std::cos(f.map_rotation),std::sin(f.map_rotation),f.square?1.f:0.f,static_cast<float>(f.destination_count)},{}};
+ for(unsigned i=0;i<f.destination_count;++i){const auto& p=f.destinations[i];values.destinations[i][0]=p.x;values.destinations[i][1]=p.y;values.destinations[i][2]=p.bearing;values.destinations[i][3]=static_cast<float>(p.kind)*(p.edge?-1.f:1.f);}
  D3D11_MAPPED_SUBRESOURCE mapped{};hr=deferred_->Map(constants_.Get(),0,D3D11_MAP_WRITE_DISCARD,0,&mapped);if(FAILED(hr))return hr;
  std::memcpy(mapped.pData,&values,sizeof(values));deferred_->Unmap(constants_.Get(),0);
  auto* rtv=target.Get();deferred_->OMSetRenderTargets(1,&rtv,nullptr);

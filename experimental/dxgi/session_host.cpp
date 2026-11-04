@@ -11,5 +11,14 @@ int main(){try{
  check(srmm_parse_session(valid+"zoom=2\ntracking=motion\nshape=square\n",c)&&c.zoom==2&&c.tracking==2&&c.square,"display options");
  for(auto bad:{"zoom=0\n","tracking=bad\n","shape=triangle\n"})check(!srmm_parse_session(valid+bad,c),"invalid display option");
  auto b=valid;b.replace(b.find("geometry=alignment_preview"),26,"geometry=measured");check(srmm_parse_session(b,c)&&c.calibration.validated,"measured is explicit");
+ SrmmSessionConfig first;check(srmm_parse_session(valid,first),"binding fixture");auto second=first;
+ second.zoom=2;second.square=true;second.left=90;check(srmm_same_map_binding(first,second),"display changes preserve asset generation");
+ second.map="level_test_02";check(!srmm_same_map_binding(first,second),"map identity requires new generation");second=first;
+ second.files.map_sha256[0]^=1;check(!srmm_same_map_binding(first,second),"asset hash requires new generation");second=first;
+ second.calibration.affine[2]+=.1;check(!srmm_same_map_binding(first,second),"calibration requires new generation");second=first;
+ second.calibration.validated=true;check(!srmm_same_map_binding(first,second),"validation change requires new generation");second=first;
+ second.session--;check(!srmm_same_map_binding(first,second),"session identity cannot reuse admission");
+ check(srmm_parse_session(valid+"uv_per_pixel_v=.002\n",c)&&c.calibration.uv_per_pixel_v==.002f,"rectangular map scale");
+ check(!srmm_parse_session(valid+"uv_per_pixel_v=nan\n",c),"invalid rectangular scale");
  std::cout<<"PASS: "<<checks<<" session parser checks; no game access.\n";return 0;
  }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

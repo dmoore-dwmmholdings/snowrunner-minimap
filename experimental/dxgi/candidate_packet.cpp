@@ -43,13 +43,15 @@ SrmmCandidateFrame SrmmCandidateGate::consume(const void* data,std::size_t size,
     if(!calibration_.validated&&!alignment_preview_)return hide(SrmmPacketStatus::unvalidated);
     const auto& a=calibration_.affine;
     for(auto v:a)if(!std::isfinite(v))return hide(SrmmPacketStatus::invalid);
+    const auto vstep=calibration_.uv_per_pixel_v==0?calibration_.uv_per_pixel:calibration_.uv_per_pixel_v;
+    if(!std::isfinite(vstep)||vstep<=0||vstep>1)return hide(SrmmPacketStatus::invalid);
     const auto determinant=a[0]*a[4]-a[1]*a[3];
     if(!std::isfinite(determinant)||!std::isfinite(calibration_.uv_per_pixel)||calibration_.uv_per_pixel<=0||calibration_.uv_per_pixel>1||std::abs(determinant)<1e-14)return hide(SrmmPacketStatus::invalid);
     const double u=a[0]*p.position[0]+a[1]*p.position[2]+a[2],v=a[3]*p.position[0]+a[4]*p.position[2]+a[5];
     const double du=a[0]*p.forward[0]+a[1]*p.forward[2],dv=a[3]*p.forward[0]+a[4]*p.forward[2];
     if(!std::isfinite(du)||!std::isfinite(dv)||!std::isfinite(u)||!std::isfinite(v)||u<0||u>1||v<0||v>1||std::hypot(du,dv)<1e-12)return hide(SrmmPacketStatus::invalid);
-    SrmmMapFrame frame;frame.center_u=static_cast<float>(u);frame.center_v=static_cast<float>(v);frame.heading=static_cast<float>(std::atan2(du,-dv));
-    frame.uv_per_pixel=calibration_.uv_per_pixel;frame.texture_v_flipped=calibration_.texture_v_flipped;
+    SrmmMapFrame frame;frame.center_u=static_cast<float>(u);frame.center_v=static_cast<float>(v);frame.heading=static_cast<float>(std::atan2(du/calibration_.uv_per_pixel,-dv/vstep));
+    frame.uv_per_pixel=calibration_.uv_per_pixel;frame.uv_per_pixel_v=vstep;frame.texture_v_flipped=calibration_.texture_v_flipped;
     frame.alignment_preview=!calibration_.validated;
     return {calibration_.validated?SrmmPacketStatus::ready_diagnostic:SrmmPacketStatus::ready_alignment_preview,frame};
 }

@@ -19,7 +19,7 @@ std::optional<SrmmCandidatePacket> srmm_parse_candidate(const void*,std::size_t)
 struct SrmmCalibration {
     // North-up UV = affine(X,Z). All six values must be measured, never inferred from image size.
     std::array<double,6> affine{};
-    float uv_per_pixel=.001f;
+    float uv_per_pixel=.001f,uv_per_pixel_v=0;
     bool texture_v_flipped=false;
     bool validated=false;
 };

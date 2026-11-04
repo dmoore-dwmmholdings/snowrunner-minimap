@@ -6,9 +6,14 @@ import os
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox
+from session_config import config_lock
 
 
 def update_display(path, zoom, tracking, shape, left, top, size):
+    with config_lock(path):
+        return _update_display_locked(path,zoom,tracking,shape,left,top,size)
+
+def _update_display_locked(path, zoom, tracking, shape, left, top, size):
     zoom = float(zoom)
     left, top, size = float(left), float(top), float(size)
     import math
@@ -19,20 +24,22 @@ def update_display(path, zoom, tracking, shape, left, top, size):
     if tracking not in ('north', 'heading', 'motion') or shape not in ('circle', 'square'):
         raise ValueError('Invalid display choice.')
     data = path.read_text(encoding='utf-8')
-    if len(data) > 16384: raise ValueError('Session file is too large.')
+    if len(data.encode('utf-8')) > 16384: raise ValueError('Session file is too large.')
     lines = [line.split('=', 1) for line in data.splitlines() if line]
     fields = dict(lines)
     if len(fields) != len(lines): raise ValueError('Duplicate session keys.')
-    if fields.get('version') != '1' or fields.get('enabled') != '1':
+    if fields.get('version') != '1' or fields.get('enabled') not in ('0','1'):
         raise ValueError('An enabled version 1 diagnostic session is required.')
     fields.update(zoom=str(zoom), tracking=tracking, shape=shape,
                   viewport=f'{left} {top} {size}')
+    payload=''.join(f'{key}={value}\n' for key,value in fields.items())
+    if len(payload.encode('utf-8'))>16384:raise ValueError('Updated session file is too large.')
     temporary = path.with_name('settings-next.local.ini')
     created = False
     try:
         with temporary.open('x', encoding='utf-8') as output:
             created = True
-            output.write(''.join(f'{key}={value}\n' for key, value in fields.items()))
+            output.write(payload)
         os.replace(temporary, path)
     finally:
         if created and temporary.exists(): temporary.unlink()

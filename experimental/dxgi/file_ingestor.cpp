@@ -2,6 +2,8 @@
 #define NOMINMAX
 #include "file_ingestor.h"
 #include "candidate_packet.h"
+#include "destination_packet.h"
+#include "menu_state_packet.h"
 #include "map_dds.h"
 #include <windows.h>
 #include <bcrypt.h>
@@ -84,9 +86,11 @@ struct SrmmFileIngestor::State {
         auto make=[&](SrmmIngestStatus status){auto p=std::make_shared<SrmmIngestSnapshot>();p->status=status;p->generation=generation;p->admission=admission;return p;};
         current=make(SrmmIngestStatus::starting);requested=make(SrmmIngestStatus::stop_requested);stopped=make(SrmmIngestStatus::stopped);
     }
-    void publish(SrmmIngestStatus status,std::shared_ptr<const SrmmMapAsset> asset={},const std::vector<std::uint8_t>* packet=nullptr) {
+    void publish(SrmmIngestStatus status,std::shared_ptr<const SrmmMapAsset> asset={},const std::vector<std::uint8_t>* packet=nullptr,const std::vector<std::uint8_t>* destinations=nullptr,const std::vector<std::uint8_t>* ui_state=nullptr) {
         auto p=std::make_shared<SrmmIngestSnapshot>();p->status=status;p->generation=generation;p->asset=std::move(asset);p->admission=admission;
         if(packet&&packet->size()==256)std::copy(packet->begin(),packet->end(),p->packet.begin());
+        if(destinations&&destinations->size()==SrmmDestinationPacketSize){std::copy(destinations->begin(),destinations->end(),p->destinations.begin());p->have_destinations=true;}
+        if(ui_state&&ui_state->size()==128){std::copy(ui_state->begin(),ui_state->end(),p->ui_state.begin());p->have_ui_state=true;}
         std::lock_guard<std::mutex> hold(publication);
         if(stopping)return;p->revision=++revision;
         std::atomic_store_explicit(&current,std::shared_ptr<const SrmmIngestSnapshot>(std::move(p)),std::memory_order_release);
@@ -98,7 +102,9 @@ bool SrmmFileIngestor::start() noexcept {
     if(attempted_)return false;attempted_=true;
     try {
         const auto& c=state_->config;
-        if(!state_->stop.value||!local_path(c.map_path)||!local_path(c.packet_path)||c.map_path==c.packet_path||c.poll_ms<20||c.poll_ms>1000||c.read_timeout_ms<20||c.read_timeout_ms>5000||
+        if((!c.ui_state_path.empty()&&(!local_path(c.ui_state_path)||c.ui_state_path==c.map_path||c.ui_state_path==c.packet_path||c.ui_state_path==c.destination_path))||
+           (!c.destination_path.empty()&&(!local_path(c.destination_path)||c.destination_path==c.map_path||c.destination_path==c.packet_path))||
+           !state_->stop.value||!local_path(c.map_path)||!local_path(c.packet_path)||c.map_path==c.packet_path||c.poll_ms<20||c.poll_ms>1000||c.read_timeout_ms<20||c.read_timeout_ms>5000||
            std::all_of(c.map_sha256.begin(),c.map_sha256.end(),[](auto b){return b==0;}))return false;
         {std::lock_guard<std::mutex> hold(state_->publication);if(state_->stopping)return false;}
         HMODULE own{};
@@ -138,7 +144,22 @@ unsigned long __stdcall SrmmFileIngestor::worker(void* opaque) noexcept {
             if(result==ReadResult::missing)state->publish(SrmmIngestStatus::missing_packet);
             else if(result!=ReadResult::ready)state->publish(SrmmIngestStatus::io_error);
             else if(!srmm_parse_candidate(packet.data(),packet.size()))state->publish(SrmmIngestStatus::invalid_packet);
-            else state->publish(SrmmIngestStatus::ready,asset,&packet);
+            else {
+                std::vector<std::uint8_t> destinations;bool have_destinations=false;
+                if(!c.destination_path.empty()) {
+                    const auto dest_result=read_file(c.destination_path,SrmmDestinationPacketSize,SrmmDestinationPacketSize,state->stop.value,(std::min)(c.read_timeout_ms,100u),destinations);
+                    if(dest_result==ReadResult::cancelled)break;
+                    have_destinations=dest_result==ReadResult::ready&&srmm_parse_destinations(destinations.data(),destinations.size()).has_value();
+                }
+                std::vector<std::uint8_t> ui;bool have_ui=false;
+                if(!c.ui_state_path.empty()){
+                    const auto ui_result=read_file(c.ui_state_path,128,128,state->stop.value,(std::min)(c.read_timeout_ms,100u),ui);
+                    if(ui_result==ReadResult::cancelled)break;
+                    have_ui=ui_result==ReadResult::ready&&srmm_parse_ui_state(ui.data(),ui.size()).has_value();
+                }
+                // Missing/malformed destination data never invalidates a good truck packet.
+                state->publish(SrmmIngestStatus::ready,asset,&packet,have_destinations?&destinations:nullptr,have_ui?&ui:nullptr);
+            }
             if(WaitForSingleObject(state->stop.value,c.poll_ms)==WAIT_OBJECT_0)break;
         }
     }catch(...){try{state->publish(SrmmIngestStatus::io_error);}catch(...){}}

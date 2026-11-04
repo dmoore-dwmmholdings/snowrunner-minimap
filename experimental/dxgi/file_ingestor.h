@@ -14,9 +14,13 @@ struct SrmmIngestSnapshot {
     std::shared_ptr<const SrmmMapAsset> asset;
     std::shared_ptr<const std::atomic<bool>> admission;
     std::array<std::uint8_t,256> packet{};
+    std::array<std::uint8_t,672> destinations{};
+    bool have_destinations=false;
+    std::array<std::uint8_t,128> ui_state{};
+    bool have_ui_state=false;
 };
 struct SrmmIngestConfig {
-    std::wstring map_path,packet_path;
+    std::wstring map_path,packet_path,destination_path,ui_state_path; // Empty destination path disables saved markers only.
     std::array<std::uint8_t,32> map_sha256{};
     std::uint32_t poll_ms=100,read_timeout_ms=500;
 };

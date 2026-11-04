@@ -15,6 +15,9 @@ import secrets
 import struct
 import time
 
+from feed_lifecycle import (MAX_SESSION_SECONDS, ProcessLifetime, atomic_json,
+                            run_samples, stop_requested)
+
 from probe_live_pose import (EXPECTED_SHA256, WindowsReader, image_sections,
                              pointer, truck_type, level_name, read_pose)
 
@@ -54,11 +57,13 @@ def replace_packet(temporary, destination, replace=os.replace, pause=time.sleep)
             pause(.025)
 
 
-def resume_sequence(data, pid, session, level):
+def resume_sequence(data, pid, session, level, allow_map_change=False):
     if len(data) != 256 or data[:8] != b'SRMMTEL1' or struct.unpack_from('<2I',data,8) != (1,256):
         raise ValueError('Invalid prior diagnostic packet.')
-    if (struct.unpack_from('<I',data,20)[0] != pid or struct.unpack_from('<Q',data,40)[0] != session or
-            data[48:112] != level.encode('ascii').ljust(64,b'\0') or data[112:144] != bytes.fromhex(EXPECTED_SHA256)):
+    name, separator, padding = data[48:112].partition(b'\0')
+    valid_map = bool(separator and not any(padding) and re.fullmatch(rb'level_[a-z0-9_]{3,48}', name))
+    if (not valid_map or struct.unpack_from('<I',data,20)[0] != pid or struct.unpack_from('<Q',data,40)[0] != session or
+            (not allow_map_change and data[48:112] != level.encode('ascii').ljust(64,b'\0')) or data[112:144] != bytes.fromhex(EXPECTED_SHA256)):
         raise ValueError('Prior packet belongs to another context.')
     sequence = struct.unpack_from('<Q',data,24)[0]
     if not 0 < sequence < 2**64-1:raise ValueError('Invalid prior sequence.')
@@ -116,14 +121,19 @@ def main():
     parser.add_argument('--layout', type=Path, required=True)
     parser.add_argument('--map', required=True)
     parser.add_argument('--output-dir', type=Path, required=True)
-    parser.add_argument('--seconds', type=int, default=30)
+    parser.add_argument('--seconds', type=int, help='Maximum duration; 30 seconds by default, or 8 hours with --until-game-exit.')
+    parser.add_argument('--until-game-exit', action='store_true', help='Remain active until this exact game exits, a stop request arrives, or the explicit duration limit expires.')
+    parser.add_argument('--allow-map-change', action='store_true', help='Allow resume after a map transition in the same PID/session/build.')
+    parser.add_argument('--record', type=Path, help='Optional new private JSONL recording, capped at 64 MiB and five records/second.')
     parser.add_argument('--resume', action='store_true', help='Resume the exact explicit private session after a stopped publisher.')
     parser.add_argument('--session', type=int, help='Explicit nonzero diagnostic session identity prepared before game startup.')
     args = parser.parse_args()
-    if not 1 <= args.seconds <= 600 or not re.fullmatch(r'level_[a-z0-9_]{3,48}', args.map):
-        parser.error('Duration must be 1..600 seconds and map must be a canonical level identifier.')
+    if args.seconds is None:args.seconds = MAX_SESSION_SECONDS if args.until_game_exit else 30
+    maximum = MAX_SESSION_SECONDS if args.until_game_exit else 600
+    if not 1 <= args.seconds <= maximum or not re.fullmatch(r'level_[a-z0-9_]{3,48}', args.map):
+        parser.error(f'Duration must be 1..{maximum} seconds and map must be a canonical level identifier.')
     if args.session is not None and not 0 < args.session < 2**64:parser.error('Session must be a nonzero uint64.')
-    reader = None;directory = None;lock = None;sequence = 0;session = args.session or secrets.randbits(64) or 1
+    reader = None;directory = None;lock = None;recording = None;sequence = 0;session = args.session or secrets.randbits(64) or 1
     try:
         if args.layout.stat().st_size > 1024*1024:
             raise ValueError('Discovery report exceeds size limit.')
@@ -147,28 +157,51 @@ def main():
             identity = json.loads((output/'session.local.json').read_text())
             if any(identity.get(k) != v for k,v in {'pid':args.pid,'session':session,'map':args.map,'build':EXPECTED_SHA256}.items()):
                 raise ValueError('Resume identity does not match.')
-            sequence = resume_sequence((output/'candidate.local.bin').read_bytes(),args.pid,session,args.map)
+            sequence = resume_sequence((output/'candidate.local.bin').read_bytes(),args.pid,session,args.map,args.allow_map_change)
         directory = output
         clock = ctypes.WinDLL('kernel32').GetTickCount64;clock.restype = ctypes.c_uint64
-        (directory/'session.local.json').write_text(json.dumps({'schema':'srmm-diagnostic-feed-v1','pid':args.pid,'session':session,'map':args.map,'build':EXPECTED_SHA256,'clock':'GetTickCount64','status':'unvalidated candidate; no gameplay-state signal'}))
+        atomic_json(directory/'session.local.json',{'schema':'srmm-diagnostic-feed-v1','pid':args.pid,'session':session,'map':args.map,'build':EXPECTED_SHA256,'clock':'GetTickCount64','status':'candidate pose; gameplay-state and calibration validation are separate'})
+        lifetime = ProcessLifetime(reader.handle)
+        run = secrets.token_hex(16);next_status = 0.;next_record = 0.;record_bytes = 0;record_error = None
+        if args.record:
+            record_path = args.record.resolve()
+            if record_path.is_relative_to(exe.parents[2]):raise ValueError('Recording must remain outside the game installation.')
+            recording = record_path.open('x',encoding='utf8')
         def write(level, pose, sampled_tick=None):
-            nonlocal sequence
+            nonlocal sequence,next_record,record_bytes,recording,record_error
             sequence += 1
-            payload = encode_packet(args.pid,session,sequence,clock() if sampled_tick is None else sampled_tick,EXPECTED_SHA256,level or args.map,pose)
+            tick = clock() if sampled_tick is None else sampled_tick
+            payload = encode_packet(args.pid,session,sequence,tick,EXPECTED_SHA256,level or args.map,pose)
             temporary = directory/'next.local.tmp';temporary.write_bytes(payload)
             replace_packet(temporary,directory/'candidate.local.bin')
-        deadline = time.monotonic() + args.seconds
-        try:
-            while time.monotonic() < deadline:
-                tick = time.monotonic();sampled_tick = clock();name,pose = sample_fixed(reader,bases[0],size,roots)
-                write(name,pose,sampled_tick)
-                time.sleep(max(0,.05-(time.monotonic()-tick)))
-        finally:
-            write(args.map,None)  # A stopped publisher never leaves an active packet behind.
-        print('Diagnostic feed stopped; final packet unavailable. No gameplay/calibration validation is implied.')
+            now = time.monotonic()
+            if recording and (now>=next_record or pose is None):
+                next_record=now+.2
+                line=json.dumps({'utc':time.time(),'sequence':sequence,'tick':tick,'session':session,'map':level or args.map,'available':pose is not None,'pose':struct.unpack_from('<6d',payload,144)})+'\n'
+                try:
+                    if record_bytes+len(line.encode('utf8'))>64*1024*1024:raise ValueError('Recording reached 64 MiB limit.')
+                    recording.write(line);recording.flush();record_bytes+=len(line.encode('utf8'))
+                except (OSError,ValueError) as error:
+                    record_error=str(error)
+                    try:recording.close()
+                    except OSError:pass
+                    recording=None
+        def status(state,level,available):
+            nonlocal next_status
+            now=time.monotonic()
+            if state=='running' and now<next_status:return
+            next_status=now+.5
+            atomic_json(directory/'status.local.json',{'schema':'srmm-feed-status-v1','pid':args.pid,'publisher_pid':os.getpid(),'session':session,'run':run,'state':state,'map':level or args.map,'sequence':sequence,'tick_ms':clock(),'pose_available':available,'record_error':record_error,'maximum_seconds':args.seconds})
+        def sample():
+            sampled_tick=clock();name,pose=sample_fixed(reader,bases[0],size,roots)
+            return name,pose,sampled_tick
+        status('starting',args.map,False)
+        reason=run_samples(sample,write,lifetime.alive,lambda:stop_requested(directory/'stop.local.json',args.pid,session,run),args.seconds,update=status)
+        print(f'Diagnostic feed stopped ({reason}); final packet unavailable. Calibration and gameplay-state validation are separate.')
     except (OSError,ValueError,KeyError,TypeError) as error:
         parser.exit(1,f'Candidate feed stopped: {error}\n')
     finally:
+        if recording:recording.close()
         if reader:reader.close()
         if lock:lock.close()
 
