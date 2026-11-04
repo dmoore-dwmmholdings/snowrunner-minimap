@@ -37,7 +37,8 @@ bool srmm_parse_session(const std::string& bytes,SrmmSessionConfig& out) noexcep
     if(bytes.empty()||bytes.size()>16384||bytes.find('\0')!=std::string::npos)return false;
     std::istringstream lines(bytes);std::string line;std::map<std::string,std::string> fields;
     while(std::getline(lines,line)) {if(!line.empty()&&line.back()=='\r')line.pop_back();if(line.empty())continue;auto p=line.find('=');if(p==std::string::npos||!fields.emplace(line.substr(0,p),line.substr(p+1)).second)return false;}
-    if(fields.size()!=12||fields.at("version")!="1"||fields.at("enabled")!="1")return false;
+    for(const auto& f:fields)if(f.first!="version"&&f.first!="enabled"&&f.first!="map_path"&&f.first!="packet_path"&&f.first!="map_sha256"&&f.first!="session"&&f.first!="map"&&f.first!="affine"&&f.first!="uv_per_pixel"&&f.first!="texture_v_flipped"&&f.first!="geometry"&&f.first!="viewport"&&f.first!="zoom"&&f.first!="tracking"&&f.first!="shape")return false;
+    if(fields.at("version")!="1"||fields.at("enabled")!="1")return false;
     SrmmSessionConfig c;
     c.files.map_path=wide(fields.at("map_path"));c.files.packet_path=wide(fields.at("packet_path"));
     if(c.files.map_path.empty()||c.files.packet_path.empty()||!hex(fields.at("map_sha256"),c.files.map_sha256))return false;
@@ -57,6 +58,9 @@ bool srmm_parse_session(const std::string& bytes,SrmmSessionConfig& out) noexcep
     std::istringstream viewport(fields.at("viewport"));viewport.imbue(std::locale::classic());
     if(!(viewport>>c.left>>c.top>>c.size))return false;viewport>>std::ws;if(!viewport.eof())return false;
     if(!std::isfinite(c.left)||!std::isfinite(c.top)||!std::isfinite(c.size)||c.left<0||c.top<0||c.size<96||c.size>800)return false;
+    if(fields.count("zoom")&&(!number(fields.at("zoom"),c.zoom)||!std::isfinite(c.zoom)||c.zoom<.25f||c.zoom>8))return false;
+    if(fields.count("tracking")){const auto& mode=fields.at("tracking");if(mode!="north"&&mode!="heading"&&mode!="motion")return false;c.tracking=mode=="motion"?2:mode=="heading"?1:0;}
+    if(fields.count("shape")){if(fields.at("shape")!="circle"&&fields.at("shape")!="square")return false;c.square=fields.at("shape")=="square";}
     out=std::move(c);return true;
  }catch(...){return false;}
 }
@@ -88,9 +92,12 @@ unsigned long __stdcall SrmmGameLayer::worker(void* opaque) noexcept {
         SrmmFileIngestor ingest(config.files);if(!ingest.start()){srmm_probe_log("session-start-refused");return 0;}
         srmm_probe_log("session-started",config.calibration.validated?1:0);
         while(WaitForSingleObject(state->stop,0)!=WAIT_OBJECT_0) {
+            SrmmSessionConfig updated;
+            // Reload display preferences only. Identity/assets/calibration stay fixed for the session.
+            if(read_config(updated)&&updated.session==config.session&&updated.map==config.map){config.left=updated.left;config.top=updated.top;config.size=updated.size;config.zoom=updated.zoom;config.tracking=updated.tracking;config.square=updated.square;}
             auto frame=std::make_shared<State::Frame>();frame->config=config;frame->snapshot=ingest.snapshot();
             std::atomic_store_explicit(&state->frame,std::shared_ptr<const State::Frame>(frame),std::memory_order_release);
-            if(WaitForSingleObject(state->stop,50)==WAIT_OBJECT_0)break;
+            if(WaitForSingleObject(state->stop,100)==WAIT_OBJECT_0)break;
         }
         ingest.request_stop();state->admitted.store(false,std::memory_order_release);
         srmm_probe_log(ingest.wait_for_stop(1000)?"session-stopped":"session-stop-pending");
@@ -113,7 +120,8 @@ void SrmmGameLayer::draw(IDXGISwapChain* swap,unsigned flags) noexcept {
         auto& visible=view_->visible;auto& previous=view_->previous;
         const bool key=(GetAsyncKeyState(VK_F9)&0x8000)!=0;
         if(key&&!previous)visible=!visible;previous=key;
-        if((GetAsyncKeyState(VK_ESCAPE)&0x8000)||(GetAsyncKeyState('M')&0x8000))visible=false;
+        // Do not latch off on M/Escape: those keys are not a reliable menu-state signal.
+        const auto& settings=current->config;view_->diagnostic->options(settings.left,settings.top,settings.size,settings.zoom,settings.tracking,settings.square);
         DXGI_SWAP_CHAIN_DESC desc{};const bool foreground=SUCCEEDED(swap->GetDesc(&desc))&&desc.OutputWindow==GetForegroundWindow();
         const auto result=view_->diagnostic->draw(swap,current->snapshot,GetTickCount64(),visible&&foreground);
         const int status=static_cast<int>(result.status)*32+static_cast<int>(result.packet_status);

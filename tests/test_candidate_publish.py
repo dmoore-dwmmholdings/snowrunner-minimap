@@ -1,8 +1,14 @@
 import sys,unittest,tempfile
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tools'))
+from candidate_feed import correct_truck_axis
 from candidate_feed import replace_packet,resume_sequence,encode_packet,EXPECTED_SHA256
 class PublishingTests(unittest.TestCase):
+    def test_lateral_axis_adapter(self):
+        for lateral,forward in [([0,0,1],[1,0,0]),([1,0,0],[0,0,-1]),([0,0,-1],[-1,0,0]),([-1,0,0],[0,0,1])]:
+            pose={'positionCandidateXYZ':[1,2,3],'orientationCandidateXYZ':lateral}
+            self.assertEqual(correct_truck_axis(pose)['orientationCandidateXYZ'],forward)
+            self.assertEqual(pose['orientationCandidateXYZ'],lateral)
     def test_actual_replace(self):
         with tempfile.TemporaryDirectory() as directory:
             p=Path(directory);(p/'old').write_bytes(b'old');(p/'new').write_bytes(b'new')

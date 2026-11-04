@@ -45,7 +45,7 @@ class CandidateFeedTests(unittest.TestCase):
     def test_fixed_sampling_rechecks_both_roots(self):
         # Mock only the bounded primitive reads, never any operating-system API.
         with patch.object(feed,'pointer',side_effect=[10,20,10,20]),patch.object(feed,'truck_type',return_value=True),patch.object(feed,'level_name',return_value='level_test_01'),patch.object(feed,'read_pose',return_value=self.pose()):
-            name,pose=feed.sample_fixed(object(),100,1000,(8,16));self.assertEqual(name,'level_test_01');self.assertEqual(pose,self.pose())
+            name,pose=feed.sample_fixed(object(),100,1000,(8,16));self.assertEqual(name,'level_test_01');self.assertEqual(pose['positionCandidateXYZ'],(100,0,200));self.assertEqual(pose['orientationCandidateXYZ'],[1.,0.,0.])
         with patch.object(feed,'pointer',side_effect=[10,20,11]),patch.object(feed,'truck_type',return_value=True),patch.object(feed,'level_name',return_value='level_test_01'),patch.object(feed,'read_pose',return_value=self.pose()):
             self.assertEqual(feed.sample_fixed(object(),100,1000,(8,16)),(None,None))
         with patch.object(feed,'pointer',side_effect=[10,20,10,21]),patch.object(feed,'truck_type',return_value=True),patch.object(feed,'level_name',return_value='level_test_01'),patch.object(feed,'read_pose',return_value=self.pose()):

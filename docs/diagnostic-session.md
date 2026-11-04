@@ -6,9 +6,9 @@ in the owned fixture. Game drawing additionally requires the existing executable
 fingerprint check and an explicit private session configuration. This is an
 experimental native integration, not a supported game plugin API.
 
-`%LOCALAPPDATA%/SnowRunnerMinimap/session.local.ini` is read once on a new original
+`%LOCALAPPDATA%/SnowRunnerMinimap/session.local.ini` is initially read on a new original
 controller thread after swap-chain creation, outside DllMain and Present. Missing
-or invalid configuration leaves drawing disabled. It must contain exactly these
+or invalid configuration leaves drawing disabled. It must contain these required
 keys, one `key=value` per line, UTF-8, at most 16 KiB:
 
 - `version=1`, `enabled=1`
@@ -29,8 +29,8 @@ preview still checks identity, map, sequence, direction validity and freshness.
 Neither mode promotes the source into the production FrameController.
 
 An explicitly enabled session displays only when fresh matching telemetry is
-available and its game window is foreground. F9 toggles it; Escape and M hide it
-when observed. This is a manual diagnostic visibility mechanism, **not a verified
+available and its game window is foreground. F9 toggles it; Escape and M no longer latch it off
+on map/menu transitions. This is a manual diagnostic visibility mechanism, **not a verified
 gameplay/menu-state detector**. Key polling can miss short taps. Garage/loading/
 truck-switch behavior and calibration must be checked before release.
 
@@ -47,7 +47,7 @@ prior layout report, map and a new private output directory. It emits unavailabl
 on normal stop; a stalled feed becomes stale within 750 ms. Do not share imported
 game assets, session configs, raw telemetry or save backups in this repository.
 
-Validation: eight Release CTest suites and 47 Python tests pass. These automated
+Validation: eight Release CTest suites and 50 Python tests pass. These automated
 checks use owned fixtures and synthetic packets; they do not establish live map
 alignment, movement or gameplay-transition correctness.
 
@@ -55,3 +55,5 @@ The publisher retries ordinary Windows sharing/access conflicts for at most 250 
 An explicit --resume reopens only the same PID/session/map/build and continues its
 sequence. A Windows byte-range lock prevents simultaneous publishers for that
 directory. It never disables scanners or changes file permissions.
+
+See [display controls](display-controls.md) for optional zoom/tracking/shape settings, the Windows settings companion, and the destination/multi-map work plan.

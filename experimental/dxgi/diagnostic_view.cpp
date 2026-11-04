@@ -1,5 +1,6 @@
 #include "diagnostic_view.h"
 #include <utility>
+#include <cmath>
 using Microsoft::WRL::ComPtr;
 SrmmDiagnosticView::SrmmDiagnosticView(std::uint64_t generation,std::array<std::uint8_t,32> asset_hash,
     std::uint32_t pid,std::uint64_t session,std::array<std::uint8_t,32> build,std::string map,SrmmCalibration calibration,bool alignment_preview,float left,float top,float size)
@@ -11,14 +12,22 @@ SrmmViewResult SrmmDiagnosticView::draw(IDXGISwapChain* swap,const std::shared_p
     if(!snapshot||snapshot->generation!=generation_){clear();return {SrmmViewStatus::wrong_generation};}
     if(!snapshot->admission||!snapshot->admission->load(std::memory_order_acquire)||snapshot->status!=SrmmIngestStatus::ready||!snapshot->asset||snapshot->asset->sha256!=asset_hash_){clear();return {SrmmViewStatus::unavailable};}
     const auto frame=gate_.consume(snapshot->packet.data(),snapshot->packet.size(),now);
-    if(!frame.frame){clear();return {SrmmViewStatus::unavailable,frame.status};}
+    if(!frame.frame){have_motion_=false;clear();return {SrmmViewStatus::unavailable,frame.status};}
     if(!swap){clear();return {SrmmViewStatus::graphics_error,frame.status,E_INVALIDARG};}
     ComPtr<ID3D11Device> device;auto hr=swap->GetDevice(IID_PPV_ARGS(&device));
     if(SUCCEEDED(hr)&&(asset_.get()!=snapshot->asset.get()||device_.Get()!=device.Get())) {
         clear();hr=renderer_.initialize_dds(device.Get(),snapshot->asset->dds.data(),snapshot->asset->dds.size());
         if(SUCCEEDED(hr)){asset_=snapshot->asset;device_=device;}
     }
-    if(SUCCEEDED(hr)){auto placement=*frame.frame;placement.left=left_;placement.top=top_;placement.size=size_;hr=renderer_.draw(swap,placement);}
+    if(SUCCEEDED(hr)){auto placement=*frame.frame;placement.left=left_;placement.top=top_;placement.size=size_;placement.square=square_;placement.uv_per_pixel/=zoom_;
+        const float du=placement.center_u-last_u_,dv=placement.center_v-last_v_;
+        if(!have_motion_||now-motion_tick_>2000){motion_=placement.heading;last_u_=placement.center_u;last_v_=placement.center_v;have_motion_=true;motion_tick_=now;}
+        else if(std::hypot(du,dv)>.00025f){motion_=std::atan2(du,-dv);last_u_=placement.center_u;last_v_=placement.center_v;motion_tick_=now;}
+        // Hold the last travel direction when stationary; reset only on missing feed.
+        else motion_tick_=now;
+        placement.map_rotation=tracking_==2?motion_:tracking_==1?placement.heading:0;
+        placement.heading-=placement.map_rotation;
+        hr=renderer_.draw(swap,placement);}
     if(FAILED(hr)){clear();return {SrmmViewStatus::graphics_error,frame.status,hr};}
     return {SrmmViewStatus::ready_diagnostic,frame.status,S_OK};
 }

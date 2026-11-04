@@ -51,7 +51,10 @@ int main(int argc,char** argv) {
   check(pixel(64,54)==0xffffffff,"North marker remains up after texture flip");
   frame.heading=1.57079632679f;draw(frame);
   check(pixel(74,64)==0xffffffff&&pixel(64,54)!=0xffffffff,"East marker rotates clockwise independently of texture flip");
-  frame.heading=0;frame.center_v=.25f;draw(frame);
+  frame.texture_v_flipped=false;frame.heading=0;frame.map_rotation=1.57079632679f;draw(frame);
+  check(pixel(44,44)==green&&pixel(84,44)==yellow&&pixel(44,84)==red&&pixel(84,84)==blue,"East-up map rotates while marker stays up");
+  frame.map_rotation=0;frame.square=true;draw(frame);check(pixel(20,20)==red,"Square includes corner outside circle");
+  frame.square=false;frame.texture_v_flipped=true;frame.heading=0;frame.center_v=.25f;draw(frame);
   check(pixel(44,44)==blue&&pixel(44,84)==blue,"Pan center uses north-up UV before storage flip");
   // Original 4x4 BC3 block: red RGB, intentionally irrelevant alpha.
   std::array<std::uint8_t,144> dds{};

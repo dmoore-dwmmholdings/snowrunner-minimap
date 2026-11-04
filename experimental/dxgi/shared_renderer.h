@@ -10,6 +10,8 @@
 struct SrmmMapFrame {
     float left=16, top=16, size=96;
     float center_u=.5f, center_v=.5f, uv_per_pixel=.004f, heading=0;
+    float map_rotation=0;
+    bool square=false;
     bool alignment_preview=false;
     bool texture_v_flipped=false; // Center remains north-up; only texture storage changes.
 };

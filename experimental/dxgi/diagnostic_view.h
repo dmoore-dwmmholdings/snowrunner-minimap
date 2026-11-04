@@ -10,7 +10,9 @@ class SrmmDiagnosticView {
     const std::uint64_t generation_;
     const std::array<std::uint8_t,32> asset_hash_;
     SrmmCandidateGate gate_;
-    float left_,top_,size_;
+    float left_,top_,size_,zoom_=1;
+    int tracking_=0;bool square_=false,have_motion_=false;
+    float motion_=0,last_u_=0,last_v_=0;std::uint64_t motion_tick_=0;
     SharedRenderer renderer_;
     std::shared_ptr<const SrmmMapAsset> asset_;
     Microsoft::WRL::ComPtr<ID3D11Device> device_;
@@ -18,5 +20,6 @@ class SrmmDiagnosticView {
 public:
     SrmmDiagnosticView(std::uint64_t generation,std::array<std::uint8_t,32> asset_hash,
         std::uint32_t pid,std::uint64_t session,std::array<std::uint8_t,32> build,std::string map,SrmmCalibration calibration,bool alignment_preview=false,float left=16,float top=16,float size=96);
+    void options(float left,float top,float size,float zoom,int tracking,bool square) noexcept {left_=left;top_=top;size_=size;zoom_=zoom;tracking_=tracking;square_=square;}
     SrmmViewResult draw(IDXGISwapChain*,const std::shared_ptr<const SrmmIngestSnapshot>&,std::uint64_t now_ms,bool hud_allowed) noexcept;
 };

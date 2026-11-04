@@ -86,6 +86,17 @@ def select_roots(report, sections):
     return tuple(roots)
 
 
+def correct_truck_axis(pose):
+    # The inspected pose basis is lateral. Convert it to forward in the X/Z plane.
+    # Keep encode_packet generic: only this game-specific adapter corrects the basis.
+    result = dict(pose)
+    x, _, z = pose['orientationCandidateXYZ']
+    n = math.hypot(x, z)
+    if n < .01: raise ValueError('Degenerate truck heading.')
+    result['orientationCandidateXYZ'] = [z/n, 0., -x/n]
+    return result
+
+
 def sample_fixed(reader, base, image_size, roots):
     truck_slot, level_slot = (base + rva for rva in roots)
     truck = pointer(reader, truck_slot);level = pointer(reader, level_slot)
@@ -96,7 +107,7 @@ def sample_fixed(reader, base, image_size, roots):
     if (pointer(reader, truck_slot) != truck or pointer(reader, level_slot) != level or
             level_name(reader, level) != name or not truck_type(reader, base, image_size, truck)):
         return None, None
-    return name, pose
+    return name, correct_truck_axis(pose) if pose else None
 
 
 def main():

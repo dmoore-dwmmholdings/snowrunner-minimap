@@ -9,7 +9,8 @@ struct SrmmSessionConfig {
     std::uint64_t session{};
     std::string map;
     SrmmCalibration calibration;
-    float left=32,top=32,size=320;
+    float left=32,top=32,size=320,zoom=1;
+    int tracking=2;bool square=false;
 };
 bool srmm_parse_session(const std::string&,SrmmSessionConfig&) noexcept;
 
