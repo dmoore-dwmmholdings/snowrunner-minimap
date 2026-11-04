@@ -11,7 +11,7 @@ from pathlib import Path
 import zipfile
 
 from extract_map_texture import read_map
-from map_catalog import discover
+from map_catalog import discover_installed
 from map_geometry import inspect_geometry,check_map_dimensions
 
 
@@ -24,20 +24,25 @@ def import_registry(client_dir, output_dir, levels=None):
     if len(client_dir.parents)<3 or output_dir.is_relative_to(client_dir.parents[2]):
         raise ValueError('Private cache must be outside the game installation.')
     if output_dir.exists():raise ValueError('Use a new private output directory.')
-    sources=[client_dir/name for name in ('shared_textures_base.pak','shared_textures.pak') if (client_dir/name).is_file()]
-    inventory=discover(sources)
+    inventory=discover_installed(client_dir)
+    if inventory['candidate_count']>128:
+        raise ValueError('Installed candidate maps exceed the native registry limit of 128; update registry support before importing.')
     selected=set(levels) if levels is not None else None
     known={item['map'] for item in inventory['maps']}
     if selected is not None and (not selected or not selected<=known):
-        raise ValueError('Requested map not present in texture inventory.')
+        raise ValueError('Requested map not present in installed playable-level inventory.')
     output_dir.mkdir(parents=True,exist_ok=False)
     registry={'schema':'srmm-map-registry-v1','maps':[],'unavailable':[],
-              'runtime_alignment_verified':False}
+              'runtime_alignment_verified':False,'coverage':inventory}
     total=0
     for item in inventory['maps']:
         level=item['map']
         if selected is not None and level not in selected:continue
         try:
+            if item['status']!='ready_for_import':
+                registry['unavailable'].append({'map':level,'reason_code':item['status'],'reason':item['reason']})
+                print(f"Unavailable {level}: {item['reason']}",flush=True)
+                continue
             if len(item['sources'])!=1:raise ValueError('Ambiguous texture source.')
             bounds,evidence=inspect_geometry(client_dir/(level+'.pak'),level)
             texture=read_map(Path(item['sources'][0]['archive']),level)
@@ -58,9 +63,13 @@ def import_registry(client_dir, output_dir, levels=None):
                 'geometry':'alignment_preview','evidence':evidence})
             print(f'Imported {level}: {bounds.width:g} x {bounds.depth:g} metres (alignment preview).',flush=True)
         except (OSError,ValueError,KeyError,zipfile.BadZipFile) as error:
-            registry['unavailable'].append({'map':level,'reason':str(error)})
+            registry['unavailable'].append({'map':level,'reason_code':'import_failed','reason':str(error)})
             print(f'Unavailable {level}: {error}',flush=True)
     registry['asset_bytes']=total
+    registry['coverage']['imported_count']=len(registry['maps'])
+    registry['coverage']['selection']='all_installed_candidates' if selected is None else 'explicit_subset'
+    registry['coverage']['all_installed_candidates_imported']=(selected is None and
+        inventory['inventory_complete'] and len(registry['maps'])==inventory['candidate_count'])
     path=output_dir/'map-registry.local.json'
     with path.open('x',encoding='utf8') as target:json.dump(registry,target,indent=2)
     return path,registry
@@ -74,6 +83,7 @@ def main():
     args=parser.parse_args()
     path,registry=import_registry(args.client_dir,args.output_dir,args.levels)
     print(f"Registry: {path}; {len(registry['maps'])} imported, {len(registry['unavailable'])} unavailable.")
+    print(f"Coverage: {len(registry['maps'])}/{registry['coverage']['candidate_count']} installed candidate maps; live alignment remains unverified.")
     if not registry['maps']:parser.exit(1,'No map met the geometry and texture checks.\n')
 
 

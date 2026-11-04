@@ -64,7 +64,7 @@ class MapImportTests(unittest.TestCase):
             client=fixture_archives(folder,duplicate=True)
             _,data=import_registry(client,Path(folder)/'private')
             self.assertEqual(data['maps'],[])
-            self.assertIn('Ambiguous',data['unavailable'][0]['reason'])
+            self.assertEqual(data['unavailable'][0]['reason_code'],'ambiguous_texture')
 
     def test_installation_output_and_unknown_map_are_rejected(self):
         with tempfile.TemporaryDirectory() as folder:

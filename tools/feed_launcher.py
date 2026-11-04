@@ -115,6 +115,8 @@ def main():
     def launch(command,label):
         stamp=datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
         log_path=args.manifest.resolve().parent/f'{label}-{stamp}.local.log'
+        from startup_session import worker_command
+        command=worker_command(command,log_path)
         log=log_path.open('x',encoding='utf8');logs.append(log)
         return subprocess.Popen(command,stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT,
                                 creationflags=subprocess.CREATE_NO_WINDOW,cwd=str(tools))

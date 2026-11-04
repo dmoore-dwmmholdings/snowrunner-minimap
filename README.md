@@ -11,10 +11,20 @@ geometry, saved-destination edge markers, and an in-game F10 display panel with
 persistent zoom/tracking/shape/size/location settings. See the
 [combined checkpoint and coordinated test plan](docs/combined-checkpoint.md).
 
-**Limits:** this combined build has not been installed or live-tested. Automatic
+The combined build was installed and the user reported that the checks they
+performed looked good; they explicitly did not test a gateway. New setup and
+coverage changes add a portable Windows application, transactional installer and
+discovery of all 68 installed candidate maps, including the previously missed
+trial map. See [setup instructions and limits](docs/portable-setup.md).
+
+**Limits:** automatic
 menu detection still lacks a verified runtime source. Destinations are saved
 snapshots, not live mission events; cross-map gateway routing is not implemented.
 Imported map calibration stays visibly provisional until landmark checks pass.
+The F10 panel is not integration into SnowRunner's own Settings menu; that
+[integration is still under investigation](docs/game-settings-integration.md).
+Only one exact Windows Steam executable build is admitted. Clean-machine setup,
+gateway transitions, arbitrary mod maps and future formats are not yet verified.
 No game assets, private recordings, credentials or third-party binaries are
 published. No paid CI workflows are used.
 

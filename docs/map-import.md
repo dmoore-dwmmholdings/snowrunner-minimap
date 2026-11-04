@@ -1,8 +1,10 @@
 # Local maps and geometry
 
-`tools/import_map_registry.py` discovers the two installed shared-texture archives,
-imports supported map textures into a new private directory, and reads each
-matching level archive. It does not download images or modify the installation.
+`tools/import_map_registry.py` inventories installed canonical level archives,
+joins their exact minimap texture names against the shared-texture family,
+`main_menu_textures.pak` and the level archives, imports supported textures into
+a new private directory, and reads each matching level's geometry. It does not
+download images or modify the installation.
 The generated DDS files and registry are local-only assets, never repository
 content.
 
@@ -14,6 +16,44 @@ Use repeated `--map level_...` arguments to import a subset. The output director
 must be new and outside the game installation. Total DDS output is bounded to
 2 GiB. An unavailable or ambiguous map is recorded with its reason and omitted
 from the admitted registry.
+
+## Coverage audit and unsupported content
+
+Run a read-only inventory before importing:
+
+```powershell
+python tools/audit_map_coverage.py --client-dir "<SnowRunner>\preload\paks\client" --output "<private-cache>\coverage.local.json"
+```
+
+Every canonical `level_*.pak` is considered, including trials and test polygons.
+`level_main_menu_*` scenes are explicitly listed as non-gameplay exclusions.
+Exact level identities are essential: height, snow, water-height and extrusion
+textures can also end with `_map.pct` and must not be mistaken for playable maps.
+
+The audit reports missing textures, unsupported sizes/encryption, ambiguous
+duplicate textures and unreadable archives. It never guesses which duplicate
+wins in the game's mount order. An unreadable supported container prevents a
+complete inventory claim because another texture override may be hidden there.
+Repair the named archive, verify installed content, or add evidence-backed format
+support before admitting those entries. Unrecognized texture-container families
+and noncanonical mod-map identifiers require separate support; this is not a
+promise that arbitrary mods or future game versions will work automatically.
+
+Discovery examines at most 256 local archive names and 200,000 members per
+supported archive, without extracting payloads. The native registry is limited
+to 128 map entries; a larger installation is rejected before cache creation.
+Imported geometry and image dimensions still receive their existing checks.
+The registry includes the full coverage report and imported count. A subset
+import cannot report that all installed candidates were imported. Inventory
+completeness is distinct from importer success and from live alignment.
+
+On the inspected installation, 69 canonical level archives comprise 68 candidate
+maps and one main-menu scene. All 68 candidates have exact minimap textures. The
+previous 67-map cache missed `level_trial_01_01`: its image is stored in
+`main_menu_textures.pak`. The additional image was imported privately and its
+480-by-480-metre scene geometry passed the existing terrain checks. Prior private
+imports covered the other 67. This establishes asset/geometry coverage for this
+installation, not live verification of all maps, gateways or mod maps.
 
 The observed scene record contains width, depth, world X/Z origin and terrain
 block counts. The importer searches only the first 64 KiB of
